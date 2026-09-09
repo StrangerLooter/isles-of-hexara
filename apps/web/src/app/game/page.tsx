@@ -1,0 +1,425 @@
+'use client';
+
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  CLIENT_EVENTS,
+  SERVER_EVENTS,
+  ServerErrorPayload,
+} from '@hexara/protocol';
+import {
+  createInitialGameState,
+  executeGameAction,
+  GameState,
+  BoardVertex,
+  BoardEdge,
+} from '@hexara/game-core';
+import { ResourceType } from '@hexara/shared';
+import confetti from 'canvas-confetti';
+import { io, Socket } from 'socket.io-client';
+import { BuildModal } from '../../components/game-ui/BuildModal';
+import { GameHUD } from '../../components/game-ui/GameHUD';
+import { GameLogModal } from '../../components/game-ui/GameLogModal';
+import { RotateOverlay } from '../../components/game-ui/RotateOverlay';
+import { TradeModal } from '../../components/game-ui/TradeModal';
+import { GameCanvas } from '../../game/GameCanvas';
+import { useGameStore } from '../../store/gameStore';
+
+export default function GamePage() {
+  const {
+    gameState,
+    setGameState,
+    localPlayerId,
+    setLocalPlayerId,
+    buildMode,
+    setBuildMode,
+    setErrorToast,
+  } = useGameStore();
+
+  const socketRef = useRef<Socket | null>(null);
+  const [isOnlineConnected, setIsOnlineConnected] = useState(false);
+
+  // Initialize Connection or Local Game
+  useEffect(() => {
+    // Read player preferences from sessionStorage
+    const storedCount = Number(sessionStorage.getItem('hexara_player_count') || '4');
+    const storedMode = sessionStorage.getItem('hexara_match_mode') || 'solo';
+    const storedScenarioId = sessionStorage.getItem('hexara_scenario_id') || 'first_island';
+    const storedScenarioName = sessionStorage.getItem('hexara_scenario_name') || 'The First Island';
+    const storedVp = Number(sessionStorage.getItem('hexara_vp_target') || '10');
+    const storedSeed = Number(sessionStorage.getItem('hexara_board_seed') || '123456');
+
+    // 1. Initialize clean game state with configured options
+    if (!useGameStore.getState().gameState) {
+      const playerList = [
+        { id: localPlayerId, username: 'Captain Amber' },
+        { id: 'ai_1', username: 'Candamir (Bot)', isAi: true },
+        { id: 'ai_2', username: 'Louis (Bot)', isAi: true },
+      ];
+      if (storedCount === 4) {
+        playerList.push({ id: 'ai_3', username: 'William (Bot)', isAi: true });
+      }
+
+      const initialGame = createInitialGameState(
+        'hexara_' + Date.now(),
+        playerList,
+        storedSeed,
+        {
+          targetVictoryPoints: storedVp,
+          scenarioId: storedScenarioId,
+          scenarioName: storedScenarioName,
+        }
+      );
+      setGameState(initialGame);
+    }
+
+    if (storedMode === 'online') {
+      const gameServerUrl =
+        (typeof window !== 'undefined' && (window as any).__GAME_SERVER_URL__) ||
+        (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_GAME_SERVER_URL) ||
+        (import.meta as any).env?.VITE_GAME_SERVER_URL ||
+        'http://localhost:3001';
+
+      const socket = io(gameServerUrl, {
+        transports: ['websocket', 'polling'],
+        timeout: 3000,
+        reconnectionAttempts: 3,
+      });
+      socketRef.current = socket;
+
+      socket.on('connect', () => {
+        setIsOnlineConnected(true);
+        socket.emit(CLIENT_EVENTS.JOIN_GAME, {
+          gameId: 'archipelago_1',
+          playerId: localPlayerId,
+          username: 'Captain Amber',
+        });
+      });
+
+      socket.on(SERVER_EVENTS.GAME_STATE, (state: GameState) => {
+        setGameState(state);
+        if (state.phase === 'FINISHED' && state.winnerId === localPlayerId) {
+          confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+        }
+      });
+
+      socket.on(SERVER_EVENTS.ERROR, (err: ServerErrorPayload) => {
+        setErrorToast(err.message);
+        setTimeout(() => setErrorToast(null), 4000);
+      });
+
+      socket.on('connect_error', () => {
+        setIsOnlineConnected(false);
+      });
+
+      return () => {
+        socket.disconnect();
+      };
+    }
+  }, []);
+
+  // Offline Autonomous AI Turn Automation
+  useEffect(() => {
+    if (!gameState || isOnlineConnected || gameState.phase === 'FINISHED') return;
+
+    const activePlayerId = gameState.playerOrder[gameState.currentPlayerIndex];
+    const activePlayer = gameState.players[activePlayerId];
+
+    if (!activePlayer || !activePlayer.isAi) return;
+
+    const aiTimer = setTimeout(() => {
+      // 1. Setup Phase for AI (Setup Round 1 & 2)
+      if (gameState.phase.startsWith('SETUP')) {
+        const vertices = Object.values(gameState.board.vertices) as BoardVertex[];
+        // Find valid unoccupied vertex obeying distance rule
+        const validVertex = vertices.find((v) => {
+          if (v.building) return false;
+          // Check all adjacent vertices are empty (Distance Rule)
+          return v.adjacentVertexIds.every((adjId) => !gameState.board.vertices[adjId]?.building);
+        });
+
+        if (validVertex) {
+          const buildSettleRes = executeGameAction(gameState, {
+            type: 'BUILD_SETTLEMENT',
+            playerId: activePlayerId,
+            vertexId: validVertex.id,
+          });
+
+          if (buildSettleRes.success) {
+            const nextState = buildSettleRes.newState;
+            const adjEdgeId = validVertex.adjacentEdgeIds[0];
+            if (adjEdgeId) {
+              const buildRoadRes = executeGameAction(nextState, {
+                type: 'BUILD_ROAD',
+                playerId: activePlayerId,
+                edgeId: adjEdgeId,
+              });
+              if (buildRoadRes.success) {
+                setGameState(buildRoadRes.newState);
+                return;
+              }
+            }
+            setGameState(nextState);
+            return;
+          }
+        }
+      }
+
+      // 2. Rolling Phase for AI
+      if (gameState.phase === 'ROLLING') {
+        const rollRes = executeGameAction(gameState, {
+          type: 'ROLL_DICE',
+          playerId: activePlayerId,
+        });
+        if (rollRes.success) {
+          setGameState(rollRes.newState);
+        }
+        return;
+      }
+
+      // 3. Robber Discard Phase for AI players
+      if (gameState.phase === 'ROBBER_DISCARD') {
+        const pendingPlayerId = Object.keys(gameState.pendingDiscards)[0];
+        if (pendingPlayerId && pendingPlayerId !== localPlayerId) {
+          const p = gameState.players[pendingPlayerId];
+          const needed = gameState.pendingDiscards[pendingPlayerId];
+          const toDiscard: Partial<Record<ResourceType, number>> = {};
+          let count = 0;
+          for (const [res, qty] of Object.entries(p.resources)) {
+            for (let i = 0; i < qty && count < needed; i++) {
+              toDiscard[res as ResourceType] = (toDiscard[res as ResourceType] ?? 0) + 1;
+              count++;
+            }
+          }
+          const discardRes = executeGameAction(gameState, {
+            type: 'DISCARD_RESOURCES',
+            playerId: pendingPlayerId,
+            resources: toDiscard,
+          });
+          if (discardRes.success) {
+            setGameState(discardRes.newState);
+          }
+        }
+        return;
+      }
+
+      // 4. Robber Move Phase for AI
+      if (gameState.phase === 'ROBBER_MOVE') {
+        const hexes = Object.values(gameState.board.hexes);
+        // Prioritize hex with highest producing number (6 or 8) that has opponent buildings
+        const targetHex =
+          hexes.find((h) => {
+            if (h.id === gameState.robberHexId || h.terrain === 'desert') return false;
+            return h.vertexIds.some((vId) => {
+              const b = gameState.board.vertices[vId]?.building;
+              return b && b.playerId !== activePlayerId;
+            });
+          }) ||
+          hexes.find((h) => h.id !== gameState.robberHexId) ||
+          hexes[0];
+
+        if (targetHex) {
+          const robRes = executeGameAction(gameState, {
+            type: 'MOVE_ROBBER',
+            playerId: activePlayerId,
+            hexId: targetHex.id,
+          });
+          if (robRes.success) {
+            setGameState(robRes.newState);
+          }
+        }
+        return;
+      }
+
+      // 5. Robber Steal Phase for AI
+      if (gameState.phase === 'ROBBER_STEAL') {
+        const victimId = gameState.robberEligibleVictimIds[0];
+        if (victimId) {
+          const stealRes = executeGameAction(gameState, {
+            type: 'STEAL_RESOURCE',
+            playerId: activePlayerId,
+            victimId,
+          });
+          if (stealRes.success) {
+            setGameState(stealRes.newState);
+          }
+        }
+        return;
+      }
+
+      // 6. Main Turn Phase for AI (Smart Builds & Dev Cards, then End Turn)
+      if (gameState.phase === 'MAIN') {
+        let currentState = gameState;
+
+        // Try to upgrade a settlement to City (3 ore, 2 grain)
+        if (
+          activePlayer.resources.ore >= 3 &&
+          activePlayer.resources.grain >= 2 &&
+          activePlayer.citiesRemaining > 0
+        ) {
+          const upgradeVertex = Object.values(currentState.board.vertices).find(
+            (v) => v.building && v.building.playerId === activePlayerId && v.building.type === 'settlement'
+          );
+          if (upgradeVertex) {
+            const cityRes = executeGameAction(currentState, {
+              type: 'BUILD_CITY',
+              playerId: activePlayerId,
+              vertexId: upgradeVertex.id,
+            });
+            if (cityRes.success) {
+              currentState = cityRes.newState;
+            }
+          }
+        }
+
+        // Try to buy Dev Card (1 ore, 1 wool, 1 grain)
+        if (
+          activePlayer.resources.ore >= 1 &&
+          activePlayer.resources.wool >= 1 &&
+          activePlayer.resources.grain >= 1 &&
+          currentState.developmentDeck.length > 0
+        ) {
+          const devRes = executeGameAction(currentState, {
+            type: 'BUY_DEV_CARD',
+            playerId: activePlayerId,
+          });
+          if (devRes.success) {
+            currentState = devRes.newState;
+          }
+        }
+
+        // End AI turn
+        const endRes = executeGameAction(currentState, {
+          type: 'END_TURN',
+          playerId: activePlayerId,
+        });
+        if (endRes.success) {
+          setGameState(endRes.newState);
+        }
+        return;
+      }
+    }, 700);
+
+    return () => clearTimeout(aiTimer);
+  }, [gameState, isOnlineConnected]);
+
+  const dispatchAction = (action: any) => {
+    if (socketRef.current && isOnlineConnected) {
+      if (action.type === 'ROLL_DICE') {
+        socketRef.current.emit(CLIENT_EVENTS.ROLL_DICE, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+        });
+      } else if (action.type === 'BUILD_ROAD') {
+        socketRef.current.emit(CLIENT_EVENTS.BUILD_ROAD, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+          edgeId: action.edgeId,
+        });
+      } else if (action.type === 'BUILD_SETTLEMENT') {
+        socketRef.current.emit(CLIENT_EVENTS.BUILD_SETTLEMENT, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+          vertexId: action.vertexId,
+        });
+      } else if (action.type === 'BUILD_CITY') {
+        socketRef.current.emit(CLIENT_EVENTS.BUILD_CITY, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+          vertexId: action.vertexId,
+        });
+      } else if (action.type === 'MOVE_ROBBER') {
+        socketRef.current.emit(CLIENT_EVENTS.MOVE_ROBBER, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+          hexId: action.hexId,
+        });
+      } else if (action.type === 'TRADE_BANK') {
+        socketRef.current.emit(CLIENT_EVENTS.TRADE_BANK, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+          giving: action.giving,
+          receiving: action.receiving,
+        });
+      } else if (action.type === 'END_TURN') {
+        socketRef.current.emit(CLIENT_EVENTS.END_TURN, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+        });
+      }
+    } else if (gameState) {
+      // Offline local engine transition
+      const res = executeGameAction(gameState, action);
+      if (res.success) {
+        setGameState(res.newState);
+        if (res.newState.phase === 'FINISHED') {
+          confetti({ particleCount: 150, spread: 70 });
+        }
+      } else {
+        setErrorToast(res.error || 'Action failed');
+        setTimeout(() => setErrorToast(null), 3000);
+      }
+    }
+  };
+
+  const handleVertexSelect = (vertexId: string) => {
+    if (!gameState) return;
+    const vertex = gameState.board.vertices[vertexId];
+    if (!vertex) return;
+
+    if (buildMode === 'city' || (vertex.building && vertex.building.type === 'settlement')) {
+      dispatchAction({ type: 'BUILD_CITY', playerId: localPlayerId, vertexId });
+      setBuildMode('none');
+      return;
+    }
+
+    if (buildMode === 'settlement' || gameState.phase.startsWith('SETUP')) {
+      dispatchAction({ type: 'BUILD_SETTLEMENT', playerId: localPlayerId, vertexId });
+      setBuildMode('none');
+    }
+  };
+
+  const handleEdgeSelect = (edgeId: string) => {
+    if (!gameState) return;
+    if (buildMode === 'road' || gameState.phase.startsWith('SETUP')) {
+      dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId });
+      setBuildMode('none');
+    }
+  };
+
+  const handleHexSelect = (hexId: string) => {
+    if (!gameState) return;
+    if (gameState.phase === 'ROBBER_MOVE') {
+      dispatchAction({ type: 'MOVE_ROBBER', playerId: localPlayerId, hexId });
+    }
+  };
+
+  const handleRollDice = () => {
+    dispatchAction({ type: 'ROLL_DICE', playerId: localPlayerId });
+  };
+
+  const handleEndTurn = () => {
+    dispatchAction({ type: 'END_TURN', playerId: localPlayerId });
+  };
+
+  const handleBankTrade = (giving: ResourceType, receiving: ResourceType) => {
+    dispatchAction({ type: 'TRADE_BANK', playerId: localPlayerId, giving, receiving });
+  };
+
+  return (
+    <main className="relative w-screen h-screen overflow-hidden bg-[#0d0705]">
+      <RotateOverlay />
+      <GameCanvas
+        onVertexSelect={handleVertexSelect}
+        onEdgeSelect={handleEdgeSelect}
+        onHexSelect={handleHexSelect}
+      />
+      <GameHUD
+        onRollDice={handleRollDice}
+        onEndTurn={handleEndTurn}
+      />
+      <BuildModal />
+      <TradeModal onBankTrade={handleBankTrade} />
+      <GameLogModal />
+    </main>
+  );
+}

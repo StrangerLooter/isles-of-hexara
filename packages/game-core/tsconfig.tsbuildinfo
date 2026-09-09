@@ -1,0 +1,1 @@
+{"root":["./src/index.ts","./src/board/topology.ts","./src/dice/dice.ts","./src/resources/production.ts","./src/rules/gameengine.ts","./src/rules/validation.ts","./src/types/index.ts","./src/victory/longestroadgraph.ts","./src/victory/victorymanager.ts"],"version":"5.9.3"}

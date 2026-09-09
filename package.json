@@ -1,0 +1,22 @@
+{
+  "name": "isles-of-hexara",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile-first real-time Catan-like web board game",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @hexara/server --filter @hexara/web dev",
+    "dev:server": "pnpm --filter @hexara/server dev",
+    "dev:web": "pnpm --filter @hexara/web dev",
+    "build": "pnpm --filter @hexara/shared build && pnpm --filter @hexara/game-core build && pnpm --filter @hexara/protocol build && pnpm --filter @hexara/server build && pnpm --filter @hexara/web build",
+    "test": "pnpm --filter @hexara/game-core test"
+  },
+  "packageManager": "pnpm@12.3.4",
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}
