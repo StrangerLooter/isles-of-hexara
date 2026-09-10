@@ -32,11 +32,41 @@ export default function GamePage() {
     setLocalPlayerId,
     buildMode,
     setBuildMode,
+    selectedVertexId,
+    setSelectedVertexId,
+    selectedEdgeId,
+    setSelectedEdgeId,
     setErrorToast,
   } = useGameStore();
 
   const socketRef = useRef<Socket | null>(null);
   const [isOnlineConnected, setIsOnlineConnected] = useState(false);
+
+  // Setup Phase: Auto-activate placement mode for human player turn
+  useEffect(() => {
+    if (!gameState) return;
+    const activePlayerId = gameState.playerOrder[gameState.currentPlayerIndex];
+    const isMyTurn = activePlayerId === localPlayerId;
+
+    if (isMyTurn && gameState.phase.startsWith('SETUP')) {
+      const p = gameState.players[localPlayerId];
+      if (!p) return;
+
+      if (gameState.phase === 'SETUP_ROUND_1') {
+        if (p.settlementsRemaining === 5 && buildMode !== 'settlement') {
+          setBuildMode('settlement');
+        } else if (p.settlementsRemaining === 4 && p.roadsRemaining === 15 && buildMode !== 'road') {
+          setBuildMode('road');
+        }
+      } else if (gameState.phase === 'SETUP_ROUND_2') {
+        if (p.settlementsRemaining === 4 && buildMode !== 'settlement') {
+          setBuildMode('settlement');
+        } else if (p.settlementsRemaining === 3 && p.roadsRemaining === 14 && buildMode !== 'road') {
+          setBuildMode('road');
+        }
+      }
+    }
+  }, [gameState?.phase, gameState?.currentPlayerIndex, gameState?.players, localPlayerId, buildMode]);
 
   // Initialize Connection or Local Game
   useEffect(() => {
@@ -366,23 +396,60 @@ export default function GamePage() {
     const vertex = gameState.board.vertices[vertexId];
     if (!vertex) return;
 
-    if (buildMode === 'city' || (vertex.building && vertex.building.type === 'settlement')) {
-      dispatchAction({ type: 'BUILD_CITY', playerId: localPlayerId, vertexId });
-      setBuildMode('none');
-      return;
-    }
-
-    if (buildMode === 'settlement' || gameState.phase.startsWith('SETUP')) {
-      dispatchAction({ type: 'BUILD_SETTLEMENT', playerId: localPlayerId, vertexId });
-      setBuildMode('none');
+    if (buildMode === 'settlement' || buildMode === 'city') {
+      setSelectedVertexId(vertexId);
+      setSelectedEdgeId(null);
     }
   };
 
   const handleEdgeSelect = (edgeId: string) => {
     if (!gameState) return;
-    if (buildMode === 'road' || gameState.phase.startsWith('SETUP')) {
-      dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId });
+    if (buildMode === 'road') {
+      setSelectedEdgeId(edgeId);
+      setSelectedVertexId(null);
+    }
+  };
+
+  const handleConfirmPlacement = () => {
+    if (!gameState) return;
+    const isSetup = gameState.phase.startsWith('SETUP');
+
+    if (buildMode === 'settlement') {
+      if (!selectedVertexId) {
+        setErrorToast('Please click an intersection circle on the board first.');
+        setTimeout(() => setErrorToast(null), 3000);
+        return;
+      }
+      dispatchAction({ type: 'BUILD_SETTLEMENT', playerId: localPlayerId, vertexId: selectedVertexId });
+      setSelectedVertexId(null);
+      if (isSetup) {
+        setBuildMode('road');
+      } else {
+        setBuildMode('none');
+      }
+    } else if (buildMode === 'city') {
+      if (!selectedVertexId) {
+        setErrorToast('Please click an intersection to upgrade to city.');
+        setTimeout(() => setErrorToast(null), 3000);
+        return;
+      }
+      dispatchAction({ type: 'BUILD_CITY', playerId: localPlayerId, vertexId: selectedVertexId });
+      setSelectedVertexId(null);
       setBuildMode('none');
+    } else if (buildMode === 'road') {
+      if (!selectedEdgeId) {
+        setErrorToast('Please click a road path on the board first.');
+        setTimeout(() => setErrorToast(null), 3000);
+        return;
+      }
+      dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId: selectedEdgeId });
+      setSelectedEdgeId(null);
+      if (isSetup) {
+        setBuildMode('none');
+        dispatchAction({ type: 'END_TURN', playerId: localPlayerId });
+      } else {
+        setBuildMode('none');
+      }
     }
   };
 
@@ -416,6 +483,7 @@ export default function GamePage() {
       <GameHUD
         onRollDice={handleRollDice}
         onEndTurn={handleEndTurn}
+        onConfirmPlacement={handleConfirmPlacement}
       />
       <BuildModal />
       <TradeModal onBankTrade={handleBankTrade} />

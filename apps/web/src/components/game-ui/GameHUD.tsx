@@ -287,22 +287,28 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           )}
         </div>
 
-        {/* Left Piece Inventory Drawer during Placement (matching Image 6 & 7) */}
+        {/* Left Piece Supply Box during Placement (matching Reference Image 1 & 2) */}
         {buildMode !== 'none' && localPlayer && (
-          <div className="pointer-events-auto absolute left-16 top-1/2 -translate-y-1/2 bg-[#1c0808]/95 border-2 border-amber-500/80 rounded-2xl p-4 shadow-2xl flex flex-col items-center gap-2 animate-in slide-in-from-left-4">
-            <span className="text-xs font-black text-amber-300 font-serif uppercase tracking-wider">
-              {buildMode}
-            </span>
-            <div className="text-3xl">
-              {buildMode === 'road' ? '🪵' : buildMode === 'settlement' ? '🏠' : '🏰'}
+          <div className="pointer-events-auto absolute left-2 md:left-4 top-1/2 -translate-y-1/2 bg-gradient-to-r from-black/90 to-black/70 border-2 border-stone-800 rounded-2xl p-3.5 shadow-2xl flex items-center gap-3 animate-in slide-in-from-left-4 backdrop-blur-md">
+            <div className="flex flex-col items-center">
+              <div
+                className="w-14 h-12 rounded-xl flex items-center justify-center shadow-lg border border-white/20"
+                style={{ backgroundColor: localPlayer.color || '#dc2626' }}
+              >
+                <span className="text-2xl drop-shadow-md">
+                  {buildMode === 'road' ? '🪵' : buildMode === 'settlement' ? '🏠' : '🏰'}
+                </span>
+              </div>
+              <span className="text-xs font-mono font-black text-amber-200 mt-1.5 drop-shadow">
+                {buildMode === 'road'
+                  ? `${localPlayer.roadsRemaining}/15`
+                  : buildMode === 'settlement'
+                  ? `${localPlayer.settlementsRemaining}/5`
+                  : `${localPlayer.citiesRemaining}/4`}
+              </span>
             </div>
-            <span className="text-xs font-mono font-bold text-gray-200">
-              {buildMode === 'road'
-                ? `${localPlayer.roadsRemaining}/15`
-                : buildMode === 'settlement'
-                ? `${localPlayer.settlementsRemaining}/5`
-                : `${localPlayer.citiesRemaining}/4`}
-            </span>
+            {/* Small red/gold pointer tab pointing toward board */}
+            <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-8 border-l-red-500 animate-pulse" />
           </div>
         )}
       </div>
@@ -374,7 +380,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           </div>
         )}
 
-        {/* Bottom Right: Dice Display & Action Buttons */}
+        {/* Bottom Right: Dice Display & Action Controls */}
         <div className="pointer-events-auto flex flex-col items-end gap-2">
           {/* Pair of Realistic 3D-styled SVG Dice & Roll Button */}
           <div className="flex items-center gap-2">
@@ -397,12 +403,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Green Checkmark [✓] Confirmation Button during Placement */}
+            {/* Green Checkmark [✓] Confirmation Button during Placement (Matching Image 2) */}
             {buildMode !== 'none' ? (
               <>
                 <button
-                  onClick={() => setBuildMode('none')}
-                  className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-[#b91c1c] border-2 border-red-300 text-white shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
+                  onClick={() => {
+                    useGameStore.getState().setSelectedVertexId(null);
+                    useGameStore.getState().setSelectedEdgeId(null);
+                    setBuildMode('none');
+                  }}
+                  className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-b from-[#991b1b] to-[#7f1d1d] border-2 border-red-400 text-white shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
                   title="Cancel Placement"
                 >
                   <Ban className="w-6 h-6 stroke-[2.5]" />
@@ -410,12 +420,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 <button
                   onClick={() => {
                     onConfirmPlacement?.();
-                    setBuildMode('none');
                   }}
-                  className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-b from-emerald-500 to-emerald-700 border-2 border-emerald-300 text-white shadow-[0_0_20px_rgba(16,185,129,0.7)] flex items-center justify-center hover:scale-105 active:scale-95 transition-all animate-pulse"
-                  title="Confirm Placement"
+                  className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 border-2 border-emerald-300 text-white shadow-[0_0_25px_rgba(16,185,129,0.9)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all animate-pulse"
+                  title="Confirm Structure Placement"
                 >
-                  <Check className="w-7 h-7 stroke-[3]" />
+                  <Check className="w-8 h-8 stroke-[3.5]" />
                 </button>
               </>
             ) : (

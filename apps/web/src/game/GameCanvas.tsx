@@ -20,6 +20,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
   const gameState = useGameStore((s) => s.gameState);
   const buildMode = useGameStore((s) => s.buildMode);
   const cameraMode = useGameStore((s) => s.cameraMode);
+  const selectedVertexId = useGameStore((s) => s.selectedVertexId);
+  const selectedEdgeId = useGameStore((s) => s.selectedEdgeId);
+  const localPlayerId = useGameStore((s) => s.localPlayerId);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -58,6 +61,36 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       gameInstanceRef.current.setCameraMode(cameraMode);
     }
   }, [cameraMode]);
+
+  // Sync interactive 3D placement preview and glowing spot
+  useEffect(() => {
+    if (!gameInstanceRef.current || !gameState) return;
+
+    if (buildMode === 'none') {
+      gameInstanceRef.current.clearPlacementPreview();
+      return;
+    }
+
+    const playerColor = gameState.players[localPlayerId]?.color || '#dc2626';
+
+    if ((buildMode === 'settlement' || buildMode === 'city') && selectedVertexId) {
+      gameInstanceRef.current.showPlacementPreview(
+        buildMode,
+        selectedVertexId,
+        playerColor,
+        gameState.board
+      );
+    } else if (buildMode === 'road' && selectedEdgeId) {
+      gameInstanceRef.current.showPlacementPreview(
+        'road',
+        selectedEdgeId,
+        playerColor,
+        gameState.board
+      );
+    } else {
+      gameInstanceRef.current.clearPlacementPreview();
+    }
+  }, [buildMode, selectedVertexId, selectedEdgeId, gameState, localPlayerId]);
 
   return (
     <div className="relative w-full h-full touch-none select-none">

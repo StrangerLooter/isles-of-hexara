@@ -55,6 +55,8 @@ export class BabylonGame {
   private harborMeshes: Mesh[] = [];
   private robberMesh: Mesh | null = null;
   private candleLight: HemisphericLight | null = null;
+  private previewPieceMesh: Mesh | null = null;
+  private previewSpotMesh: Mesh | null = null;
 
   // Materials caching
   private terrainMaterials = new Map<string, StandardMaterial>();
@@ -614,65 +616,74 @@ export class BabylonGame {
   }
 
   /**
-   * Builds an authentic Catan wooden Settlement piece (as shown in reference image):
-   * A rectangular house base topped with a peaked gable roof.
+   * Builds an authentic Catan wooden Settlement piece:
+   * A classic single house with a rectangular base and a peaked triangular gable roof.
    */
   private createSettlementMesh(name: string, scale: number = 1.0): Mesh {
-    const w = 0.68 * scale;
+    const w = 0.66 * scale;
     const hBase = 0.44 * scale;
-    const d = 0.68 * scale;
+    const d = 0.66 * scale;
 
     const base = MeshBuilder.CreateBox(name, { width: w, height: hBase, depth: d }, this.scene);
     base.position.y = hBase / 2;
 
     // Peaked gable roof: triangular prism
     const roof = MeshBuilder.CreateCylinder(
-      `${name}_r`,
+      `${name}_roof`,
       { diameter: w * 1.1547, height: d, tessellation: 3 },
       this.scene
     );
     roof.rotation.x = Math.PI / 2;
     roof.rotation.z = Math.PI / 2;
-    roof.position.y = hBase / 2 + (w * 1.1547 / 2) * 0.5;
+    roof.position.y = hBase / 2 + (w * 1.1547 / 2) * 0.48;
     roof.parent = base;
 
     return base;
   }
 
   /**
-   * Builds an authentic Catan wooden City piece (as shown in reference image):
-   * A low wing house base on the left attached to a taller cathedral tower with a peaked gable roof on the right.
+   * Builds an authentic Catan wooden City piece:
+   * A distinct DOUBLE HOUSE (conjoined standard house wing on the left + taller cathedral tower house on the right).
    */
   private createCityMesh(name: string, scale: number = 1.0): Mesh {
-    const wWing = 0.46 * scale;
-    const hWing = 0.52 * scale;
-    const d = 0.68 * scale;
+    const d = 0.72 * scale;
 
-    const wTower = 0.46 * scale;
-    const hTower = 0.84 * scale;
+    // 1. Right Conjoined Taller Church / Tower House (Main Root)
+    const wRight = 0.58 * scale;
+    const hRight = 0.84 * scale;
+    const root = MeshBuilder.CreateBox(name, { width: wRight, height: hRight, depth: d }, this.scene);
+    root.position.y = hRight / 2;
 
-    // Cathedral tower body (main root)
-    const tower = MeshBuilder.CreateBox(name, { width: wTower, height: hTower, depth: d }, this.scene);
-    tower.position.y = hTower / 2;
-
-    // Lower wing house (left step)
-    const wing = MeshBuilder.CreateBox(`${name}_w`, { width: wWing, height: hWing, depth: d }, this.scene);
-    wing.position.x = -wWing;
-    wing.position.y = (hWing - hTower) / 2;
-    wing.parent = tower;
-
-    // Peaked gable roof atop the tower
-    const roof = MeshBuilder.CreateCylinder(
-      `${name}_r`,
-      { diameter: wTower * 1.1547, height: d, tessellation: 3 },
+    const rightRoof = MeshBuilder.CreateCylinder(
+      `${name}_rightRoof`,
+      { diameter: wRight * 1.1547, height: d, tessellation: 3 },
       this.scene
     );
-    roof.rotation.x = Math.PI / 2;
-    roof.rotation.z = Math.PI / 2;
-    roof.position.y = hTower / 2 + (wTower * 1.1547 / 2) * 0.5;
-    roof.parent = tower;
+    rightRoof.rotation.x = Math.PI / 2;
+    rightRoof.rotation.z = Math.PI / 2;
+    rightRoof.position.y = hRight / 2 + (wRight * 1.1547 / 2) * 0.46;
+    rightRoof.parent = root;
 
-    return tower;
+    // 2. Left House Wing (Conjoined standard house)
+    const wLeft = 0.52 * scale;
+    const hLeft = 0.48 * scale;
+    const leftBase = MeshBuilder.CreateBox(`${name}_leftBase`, { width: wLeft, height: hLeft, depth: d }, this.scene);
+    leftBase.position.x = -(wLeft + wRight) / 2;
+    leftBase.position.y = (hLeft - hRight) / 2;
+    leftBase.parent = root;
+
+    const leftRoof = MeshBuilder.CreateCylinder(
+      `${name}_leftRoof`,
+      { diameter: wLeft * 1.1547, height: d, tessellation: 3 },
+      this.scene
+    );
+    leftRoof.rotation.x = Math.PI / 2;
+    leftRoof.rotation.z = Math.PI / 2;
+    leftRoof.position.x = -(wLeft + wRight) / 2;
+    leftRoof.position.y = (hLeft - hRight) / 2 + hLeft / 2 + (wLeft * 1.1547 / 2) * 0.46;
+    leftRoof.parent = root;
+
+    return root;
   }
 
   /**
@@ -939,22 +950,24 @@ export class BabylonGame {
       }
     }
 
-    // 3. Render Vertex Anchors for Interactive Building (Flat glowing discs, hidden by default)
+    // 3. Render Vertex Anchors for Interactive Building (Crisp white rings matching reference image 1)
     for (const v of Object.values(board.vertices) as BoardVertex[]) {
       if (!this.vertexNodes.has(v.id)) {
-        const vNode = MeshBuilder.CreateCylinder(
+        // Torus geometry for authentic white ring circles at intersections
+        const vNode = MeshBuilder.CreateTorus(
           `node_${v.id}`,
-          { diameter: 0.52, height: 0.04, tessellation: 20 },
+          { diameter: 0.85, thickness: 0.12, tessellation: 32 },
           this.scene
         );
-        vNode.position = new Vector3(v.x, 0.68, v.z);
+        vNode.position = new Vector3(v.x, 0.70, v.z);
 
         const vMat = new StandardMaterial(`vMat_${v.id}`, this.scene);
-        vMat.diffuseColor = new Color3(1.0, 0.85, 0.2);
-        vMat.emissiveColor = new Color3(0.6, 0.45, 0.1);
-        vMat.alpha = 0.85;
+        vMat.diffuseColor = new Color3(1.0, 1.0, 1.0);
+        vMat.emissiveColor = new Color3(0.95, 0.95, 0.95);
+        vMat.specularColor = new Color3(0.6, 0.6, 0.6);
+        vMat.alpha = 0.92;
         vNode.material = vMat;
-        vNode.setEnabled(false); // Hidden during normal gameplay to keep board pristine
+        vNode.setEnabled(false); // Hidden during normal gameplay to keep board clean
 
         vNode.actionManager = new ActionManager(this.scene);
         vNode.actionManager.registerAction(
@@ -1173,8 +1186,105 @@ export class BabylonGame {
   private currentPlacementMode: 'none' | 'road' | 'settlement' | 'city' = 'none';
 
   /**
+   * Clears any active interactive placement preview mesh and highlight spot.
+   */
+  public clearPlacementPreview(): void {
+    if (this.previewPieceMesh) {
+      this.previewPieceMesh.dispose();
+      this.previewPieceMesh = null;
+    }
+    if (this.previewSpotMesh) {
+      this.previewSpotMesh.dispose();
+      this.previewSpotMesh = null;
+    }
+  }
+
+  /**
+   * Spawns a vibrant interactive 3D preview piece and glowing target spot
+   * at the clicked vertex or edge (matching Reference Image 2).
+   */
+  public showPlacementPreview(
+    type: 'settlement' | 'city' | 'road',
+    id: string,
+    playerColor: string,
+    board: BoardState
+  ): void {
+    this.clearPlacementPreview();
+
+    if (type === 'settlement' || type === 'city') {
+      const v = board.vertices[id];
+      if (!v) return;
+
+      // 1. Bright glowing target disc underneath selected vertex (Image 2)
+      const spot = MeshBuilder.CreateCylinder(
+        'preview_spot',
+        { diameter: 1.15, height: 0.04, tessellation: 32 },
+        this.scene
+      );
+      spot.position = new Vector3(v.x, 0.71, v.z);
+      const spotMat = new StandardMaterial('previewSpotMat', this.scene);
+      spotMat.diffuseColor = new Color3(1.0, 0.95, 0.4);
+      spotMat.emissiveColor = new Color3(1.0, 0.85, 0.2);
+      spotMat.alpha = 0.75;
+      spot.material = spotMat;
+      this.previewSpotMesh = spot;
+
+      // 2. Preview 3D building piece in player's color
+      let piece: Mesh;
+      if (type === 'city') {
+        piece = this.createCityMesh('preview_piece', 1.0);
+        piece.position = new Vector3(v.x, 0.72, v.z);
+      } else {
+        piece = this.createSettlementMesh('preview_piece', 0.95);
+        piece.position = new Vector3(v.x, 0.72, v.z);
+      }
+
+      const pMat = new StandardMaterial('previewPieceMat', this.scene);
+      pMat.diffuseColor = Color3.FromHexString(playerColor);
+      pMat.emissiveColor = Color3.FromHexString(playerColor).scale(0.4);
+      pMat.specularColor = new Color3(0.4, 0.4, 0.4);
+      this.applyPieceMaterial(piece, pMat);
+      this.previewPieceMesh = piece;
+    } else if (type === 'road') {
+      const edge = board.edges[id];
+      if (!edge) return;
+      const [v1Id, v2Id] = edge.vertexIds;
+      const v1 = board.vertices[v1Id];
+      const v2 = board.vertices[v2Id];
+      const angleY = v1 && v2 ? Math.atan2(v2.x - v1.x, v2.z - v1.z) : 0;
+
+      // Glowing base bar
+      const spot = MeshBuilder.CreateBox(
+        'preview_spot_road',
+        { width: 0.6, height: 0.04, depth: 2.0 },
+        this.scene
+      );
+      spot.position = new Vector3(edge.x, 0.71, edge.z);
+      spot.rotation.y = angleY;
+      const spotMat = new StandardMaterial('previewSpotMat_road', this.scene);
+      spotMat.diffuseColor = new Color3(1.0, 0.95, 0.4);
+      spotMat.emissiveColor = new Color3(1.0, 0.85, 0.2);
+      spotMat.alpha = 0.75;
+      spot.material = spotMat;
+      this.previewSpotMesh = spot;
+
+      // Preview road stick
+      const roadMesh = MeshBuilder.CreateBox('preview_road', { width: 0.34, height: 0.34, depth: 1.7 }, this.scene);
+      roadMesh.position = new Vector3(edge.x, 0.74, edge.z);
+      roadMesh.rotation.y = angleY;
+
+      const pMat = new StandardMaterial('previewRoadMat', this.scene);
+      pMat.diffuseColor = Color3.FromHexString(playerColor);
+      pMat.emissiveColor = Color3.FromHexString(playerColor).scale(0.4);
+      pMat.specularColor = new Color3(0.4, 0.4, 0.4);
+      roadMesh.material = pMat;
+      this.previewPieceMesh = roadMesh;
+    }
+  }
+
+  /**
    * Highlights valid placement indicators (directional road arrows or vertex rings)
-   * When mode is 'none', all indicators are hidden so the board terrain is 100% visible and clean.
+   * When mode is 'none', all indicators and previews are hidden so the board terrain is 100% visible and clean.
    */
   public setPlacementMode(mode: 'none' | 'road' | 'settlement' | 'city'): void {
     this.currentPlacementMode = mode;
@@ -1187,7 +1297,8 @@ export class BabylonGame {
       this.edgeNodes.forEach((edge) => edge.setEnabled(false));
       this.vertexNodes.forEach((node) => node.setEnabled(true));
     } else {
-      // Clean board view - hide all wireframe/anchor nodes
+      // Clean board view - hide all indicators and clear any placement preview
+      this.clearPlacementPreview();
       this.roadArrowMeshes.forEach((arrow) => arrow.setEnabled(false));
       this.edgeNodes.forEach((edge) => edge.setEnabled(false));
       this.vertexNodes.forEach((node) => node.setEnabled(false));
@@ -1230,6 +1341,7 @@ export class BabylonGame {
 
   public dispose(): void {
     window.removeEventListener('resize', this.handleResize);
+    this.clearPlacementPreview();
     this.clearBoard();
     this.terrainMaterials.forEach((mat) => mat.dispose());
     this.terrainMaterials.clear();
