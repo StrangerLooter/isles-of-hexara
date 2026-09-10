@@ -8,6 +8,7 @@ export default defineConfig({
     port: 3000,
     host: true,
   },
+  envPrefix: ['VITE_', 'NEXT_PUBLIC_', 'GAME_'],
   define: {
     'process.env': {},
   },

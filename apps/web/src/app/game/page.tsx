@@ -143,8 +143,11 @@ export default function GamePage() {
     if (storedMode === 'online') {
       const gameServerUrl =
         (typeof window !== 'undefined' && (window as any).__GAME_SERVER_URL__) ||
-        (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_GAME_SERVER_URL) ||
         (import.meta as any).env?.VITE_GAME_SERVER_URL ||
+        (import.meta as any).env?.NEXT_PUBLIC_GAME_SERVER_URL ||
+        (import.meta as any).env?.GAME_SERVER_URL ||
+        (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_GAME_SERVER_URL) ||
+        (typeof process !== 'undefined' && process.env?.GAME_SERVER_URL) ||
         'http://localhost:3001';
 
       const token = localStorage.getItem('hexara_auth_token') || sessionStorage.getItem('hexara_auth_token') || undefined;
