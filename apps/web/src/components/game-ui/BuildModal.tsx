@@ -2,10 +2,14 @@
 
 import React from 'react';
 import { BUILDING_COSTS, BuildingType } from '@hexara/shared';
-import { Hammer, Home, Landmark, X } from 'lucide-react';
+import { Hammer, Home, Landmark, Scroll, X, Sparkles } from 'lucide-react';
 import { useGameStore } from '../../store/gameStore';
 
-export const BuildModal: React.FC = () => {
+interface BuildModalProps {
+  onBuyDevCard?: () => void;
+}
+
+export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
   const {
     isBuildModalOpen,
     setBuildModalOpen,
@@ -19,8 +23,12 @@ export const BuildModal: React.FC = () => {
   const player = gameState.players[localPlayerId];
   if (!player) return null;
 
+  const isMainPhase = gameState.phase === 'MAIN';
+  const isSetup = gameState.phase.startsWith('SETUP');
+  const isMyTurn = gameState.playerOrder[gameState.currentPlayerIndex] === localPlayerId;
+
   const items: {
-    type: BuildingType;
+    type: BuildingType | 'dev_card';
     label: string;
     icon: React.ReactNode;
     cost: Record<string, number>;
@@ -33,7 +41,7 @@ export const BuildModal: React.FC = () => {
       icon: <Hammer className="w-5 h-5 text-amber-300" />,
       cost: BUILDING_COSTS.road,
       remaining: player.roadsRemaining,
-      description: 'Connects settlements across island edges (15 max).',
+      description: 'Connects settlements across island paths (15 max).',
     },
     {
       type: 'settlement',
@@ -41,7 +49,7 @@ export const BuildModal: React.FC = () => {
       icon: <Home className="w-5 h-5 text-amber-300" />,
       cost: BUILDING_COSTS.settlement,
       remaining: player.settlementsRemaining,
-      description: 'Yields 1 resource from adjacent tiles. Worth 1 VP.',
+      description: 'Yields 1 resource from adjacent hexes. Worth 1 VP.',
     },
     {
       type: 'city',
@@ -51,11 +59,24 @@ export const BuildModal: React.FC = () => {
       remaining: player.citiesRemaining,
       description: 'Upgrades a settlement. Yields 2 resources. Worth 2 VP.',
     },
+    {
+      type: 'dev_card',
+      label: 'Development Card',
+      icon: <Scroll className="w-5 h-5 text-purple-300" />,
+      cost: BUILDING_COSTS.dev_card,
+      remaining: gameState.developmentDeck.length,
+      description: 'Draw Knights, Progress cards, or hidden Victory Points.',
+    },
   ];
 
-  const handleSelect = (type: BuildingType) => {
-    setBuildMode(type);
-    setBuildModalOpen(false);
+  const handleSelect = (type: BuildingType | 'dev_card') => {
+    if (type === 'dev_card') {
+      onBuyDevCard?.();
+      setBuildModalOpen(false);
+    } else {
+      setBuildMode(type);
+      setBuildModalOpen(false);
+    }
   };
 
   const [activeTab, setActiveTab] = React.useState<'build' | 'card'>('build');
@@ -72,7 +93,7 @@ export const BuildModal: React.FC = () => {
               <h3 className="text-lg font-black uppercase tracking-wider text-amber-100">
                 Building Costs & Guide
               </h3>
-              <p className="text-[11px] text-amber-300/70">Official Catan 25th Anniversary Rules</p>
+              <p className="text-[11px] text-amber-300/70">Official Catan Rules & Recipes</p>
             </div>
           </div>
           <button
@@ -93,7 +114,7 @@ export const BuildModal: React.FC = () => {
                 : 'bg-black/40 text-amber-300/70 hover:bg-white/5'
             }`}
           >
-            Quick Build Actions
+            Quick Build & Buy
           </button>
           <button
             onClick={() => setActiveTab('card')}
@@ -117,66 +138,81 @@ export const BuildModal: React.FC = () => {
               />
             </div>
             <p className="text-[11px] text-amber-200/80 mt-3 text-center">
-              Crystal-clear high-definition rule card with exact resource recipe costs and development card guidelines.
+              Official reference guide showing exact resource combinations for Roads, Settlements, Cities, and Development Cards.
             </p>
           </div>
         ) : (
           <div className="space-y-3">
-          {items.map((item) => {
-            const canAfford = Object.entries(item.cost).every(
-              ([res, count]) => (player.resources[res as keyof typeof player.resources] ?? 0) >= count
-            );
-            const canBuild = canAfford && item.remaining > 0;
+            {items.map((item) => {
+              const isDevCard = item.type === 'dev_card';
+              const canAfford = Object.entries(item.cost).every(
+                ([res, count]) => (player.resources[res as keyof typeof player.resources] ?? 0) >= count
+              );
 
-            return (
-              <div
-                key={item.type}
-                onClick={() => canBuild && handleSelect(item.type)}
-                className={`p-3.5 rounded-xl border transition-all flex items-center justify-between ${
-                  canBuild
-                    ? 'border-amber-600/50 hover:border-amber-400 bg-[#2b170c]/80 hover:bg-[#3d2315] cursor-pointer shadow-lg'
-                    : 'border-amber-950/40 bg-[#170905]/60 opacity-50 cursor-not-allowed'
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <div className="p-2.5 rounded-lg bg-[#3d2315] border border-amber-600/40 text-amber-300">
-                    {item.icon}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-amber-100 text-sm">{item.label}</span>
-                      <span className="text-[10px] font-mono text-amber-400 px-1.5 py-0.5 rounded bg-black/40 border border-amber-600/30">
-                        {item.remaining} left
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-amber-200/70 mt-0.5">{item.description}</p>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      {Object.entries(item.cost).map(([res, count]) => (
-                        <span
-                          key={res}
-                          className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20"
-                        >
-                          {count} {res}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+              const canBuild =
+                isMyTurn &&
+                ((isSetup && (item.type === 'road' || item.type === 'settlement')) ||
+                  (isMainPhase && canAfford && item.remaining > 0));
 
-                <button
-                  disabled={!canBuild}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition-all ${
+              return (
+                <div
+                  key={item.type}
+                  onClick={() => canBuild && handleSelect(item.type)}
+                  className={`p-3.5 rounded-xl border transition-all flex items-center justify-between ${
                     canBuild
-                      ? 'catan-btn-gold shadow-md'
-                      : 'bg-[#241710] text-amber-200/40 border border-amber-900/40'
+                      ? 'border-amber-600/50 hover:border-amber-400 bg-[#2b170c]/80 hover:bg-[#3d2315] cursor-pointer shadow-lg hover:scale-101'
+                      : 'border-amber-950/40 bg-[#170905]/60 opacity-50 cursor-not-allowed'
                   }`}
                 >
-                  {canBuild ? 'Place' : !canAfford ? 'Need Cards' : 'Maxed'}
-                </button>
-              </div>
-            );
-          })}
-        </div>
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 rounded-lg bg-[#3d2315] border border-amber-600/40 text-amber-300">
+                      {item.icon}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-amber-100 text-sm">{item.label}</span>
+                        <span className="text-[10px] font-mono text-amber-400 px-1.5 py-0.5 rounded bg-black/40 border border-amber-600/30">
+                          {item.remaining} {isDevCard ? 'in deck' : 'left'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-amber-200/70 mt-0.5">{item.description}</p>
+                      <div className="flex items-center gap-1.5 mt-2">
+                        {Object.entries(item.cost).map(([res, count]) => (
+                          <span
+                            key={res}
+                            className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20"
+                          >
+                            {count} {res}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    disabled={!canBuild}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md ${
+                      canBuild
+                        ? 'catan-btn-gold'
+                        : 'bg-[#241710] text-amber-200/40 border border-amber-900/40'
+                    }`}
+                  >
+                    {isDevCard
+                      ? canBuild
+                        ? 'Draw Card'
+                        : !canAfford
+                        ? 'Need Cards'
+                        : 'Empty'
+                      : canBuild
+                      ? 'Place'
+                      : !canAfford
+                      ? 'Need Cards'
+                      : 'Maxed'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

@@ -531,6 +531,10 @@ export default function GamePage() {
     dispatchAction({ type: 'TRADE_CANCEL', playerId: localPlayerId });
   };
 
+  const handleBuyDevCard = () => {
+    dispatchAction({ type: 'BUY_DEV_CARD', playerId: localPlayerId });
+  };
+
   const handlePlayDevCard = (card: string, params?: DevCardParams) => {
     dispatchAction({
       type: 'PLAY_DEV_CARD',
@@ -605,7 +609,7 @@ export default function GamePage() {
         onConfirmPlacement={handleConfirmPlacement}
         onPlayDevCard={handlePlayDevCard}
       />
-      <BuildModal />
+      <BuildModal onBuyDevCard={handleBuyDevCard} />
       <TradeModal
         onBankTrade={handleBankTrade}
         onProposeTrade={handleProposeTrade}
