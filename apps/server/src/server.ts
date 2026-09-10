@@ -74,6 +74,6 @@ async function bootstrap() {
   }
 }
 
-if (process.env.NODE_ENV !== 'test' && !process.env.TEST && process.argv[1]?.includes('dist/server.js')) {
+if (process.env.NODE_ENV !== 'test' && !process.env.TEST) {
   bootstrap();
 }
