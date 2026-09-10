@@ -955,22 +955,25 @@ export class BabylonGame {
     // 3. Render Vertex Anchors for Interactive Building (Crisp white rings matching reference image 1)
     for (const v of Object.values(board.vertices) as BoardVertex[]) {
       if (!this.vertexNodes.has(v.id)) {
-        // Torus geometry for authentic white ring circles at intersections
-        const vNode = MeshBuilder.CreateTorus(
+        // Flat disc raised high above all hex/token geometry so ray-picking is unambiguous
+        // y=1.20 is well above hex tops (0.66), tokens (0.74), and robber (0.68)
+        const vNode = MeshBuilder.CreateCylinder(
           `node_${v.id}`,
-          { diameter: 0.85, thickness: 0.12, tessellation: 32 },
+          { diameter: 1.10, height: 0.05, tessellation: 20 },
           this.scene
         );
-        vNode.position = new Vector3(v.x, 0.70, v.z);
+        vNode.position = new Vector3(v.x, 1.20, v.z);
 
         const vMat = new StandardMaterial(`vMat_${v.id}`, this.scene);
         vMat.diffuseColor = new Color3(1.0, 1.0, 1.0);
         vMat.emissiveColor = new Color3(0.95, 0.95, 0.95);
         vMat.specularColor = new Color3(0.6, 0.6, 0.6);
-        vMat.alpha = 0.92;
+        vMat.alpha = 0.88;
         vNode.material = vMat;
         vNode.setEnabled(false); // Hidden during normal gameplay to keep board clean
 
+        // Make it isPickable only when enabled
+        vNode.isPickable = false;
         vNode.actionManager = new ActionManager(this.scene);
         vNode.actionManager.registerAction(
           new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
@@ -994,21 +997,22 @@ export class BabylonGame {
         const dz = v2.z - v1.z;
         const angleY = Math.atan2(dx, dz);
 
-        // Clickable Edge Box — subtle flat placement zone
+        // Raised edge anchor at y=1.00 so it's clearly above all hex+token geometry
         const edgeAnchor = MeshBuilder.CreateBox(
           `edge_${edge.id}`,
-          { width: 0.35, height: 0.06, depth: 1.6 },
+          { width: 0.55, height: 0.08, depth: 1.75 },
           this.scene
         );
-        edgeAnchor.position = new Vector3(edge.x, 0.68, edge.z);
+        edgeAnchor.position = new Vector3(edge.x, 1.00, edge.z);
         edgeAnchor.rotation.y = angleY;
 
         const edgeMat = new StandardMaterial(`eMat_${edge.id}`, this.scene);
         edgeMat.diffuseColor = new Color3(1.0, 0.85, 0.2);
         edgeMat.emissiveColor = new Color3(0.4, 0.3, 0.05);
-        edgeMat.alpha = 0.7;
+        edgeMat.alpha = 0.72;
         edgeAnchor.material = edgeMat;
         edgeAnchor.setEnabled(false); // Hidden during normal gameplay
+        edgeAnchor.isPickable = false;
 
         edgeAnchor.actionManager = new ActionManager(this.scene);
         edgeAnchor.actionManager.registerAction(
@@ -1019,13 +1023,13 @@ export class BabylonGame {
 
         this.edgeNodes.set(edge.id, edgeAnchor);
 
-        // Directional Road Arrow
+        // Directional Road Arrow at y=1.15
         const arrow = MeshBuilder.CreateCylinder(
           `arrow_${edge.id}`,
-          { diameterTop: 0.0, diameterBottom: 0.38, height: 0.65, tessellation: 3 },
+          { diameterTop: 0.0, diameterBottom: 0.45, height: 0.7, tessellation: 3 },
           this.scene
         );
-        arrow.position = new Vector3(edge.x, 0.85, edge.z);
+        arrow.position = new Vector3(edge.x, 1.15, edge.z);
         arrow.rotation.x = Math.PI / 2;
         arrow.rotation.y = angleY;
         const arrowMat = new StandardMaterial(`arrMat_${edge.id}`, this.scene);
@@ -1140,7 +1144,11 @@ export class BabylonGame {
           this.pieceMeshes.set(pieceKey, pieceMesh);
         }
       } else {
-        if (vNode) vNode.setEnabled(this.currentPlacementMode === 'settlement' || this.currentPlacementMode === 'city');
+        if (vNode) {
+          const shouldShow = this.currentPlacementMode === 'settlement' || this.currentPlacementMode === 'city';
+          vNode.setEnabled(shouldShow);
+          vNode.isPickable = shouldShow;
+        }
       }
     }
 
@@ -1174,7 +1182,11 @@ export class BabylonGame {
           this.pieceMeshes.set(roadKey, roadMesh);
         }
       } else {
-        if (edgeAnchor) edgeAnchor.setEnabled(this.currentPlacementMode === 'road');
+        if (edgeAnchor) {
+          const shouldShow = this.currentPlacementMode === 'road';
+          edgeAnchor.setEnabled(shouldShow);
+          edgeAnchor.isPickable = shouldShow;
+        }
       }
     }
 
@@ -1218,10 +1230,10 @@ export class BabylonGame {
       // 1. Bright glowing target disc underneath selected vertex (Image 2)
       const spot = MeshBuilder.CreateCylinder(
         'preview_spot',
-        { diameter: 1.15, height: 0.04, tessellation: 32 },
+        { diameter: 1.40, height: 0.06, tessellation: 32 },
         this.scene
       );
-      spot.position = new Vector3(v.x, 0.71, v.z);
+      spot.position = new Vector3(v.x, 1.21, v.z);
       const spotMat = new StandardMaterial('previewSpotMat', this.scene);
       spotMat.diffuseColor = new Color3(1.0, 0.95, 0.4);
       spotMat.emissiveColor = new Color3(1.0, 0.85, 0.2);
@@ -1233,10 +1245,10 @@ export class BabylonGame {
       let piece: Mesh;
       if (type === 'city') {
         piece = this.createCityMesh('preview_piece', 1.0);
-        piece.position = new Vector3(v.x, 0.72, v.z);
+        piece.position = new Vector3(v.x, 0.68, v.z);
       } else {
         piece = this.createSettlementMesh('preview_piece', 0.95);
-        piece.position = new Vector3(v.x, 0.72, v.z);
+        piece.position = new Vector3(v.x, 0.68, v.z);
       }
 
       const pMat = new StandardMaterial('previewPieceMat', this.scene);
@@ -1256,10 +1268,10 @@ export class BabylonGame {
       // Glowing base bar
       const spot = MeshBuilder.CreateBox(
         'preview_spot_road',
-        { width: 0.6, height: 0.04, depth: 2.0 },
+        { width: 0.7, height: 0.06, depth: 2.1 },
         this.scene
       );
-      spot.position = new Vector3(edge.x, 0.71, edge.z);
+      spot.position = new Vector3(edge.x, 1.01, edge.z);
       spot.rotation.y = angleY;
       const spotMat = new StandardMaterial('previewSpotMat_road', this.scene);
       spotMat.diffuseColor = new Color3(1.0, 0.95, 0.4);
@@ -1288,20 +1300,54 @@ export class BabylonGame {
    */
   public setPlacementMode(mode: 'none' | 'road' | 'settlement' | 'city'): void {
     this.currentPlacementMode = mode;
+    const isPlacing = mode !== 'none';
+
+    // During placement, disable ActionManagers on hex/token meshes so they don't
+    // intercept pointer events that should go to vertex/edge nodes above them.
+    this.hexMeshes.forEach((mesh) => {
+      mesh.isPickable = !isPlacing;
+    });
+    this.hexTopMeshes.forEach((mesh) => {
+      mesh.isPickable = !isPlacing;
+    });
+    this.tokenMeshes.forEach((mesh) => {
+      mesh.isPickable = !isPlacing;
+    });
+
     if (mode === 'road') {
+      // Show edge anchors and arrows; hide vertex rings; enable edge picking
       this.roadArrowMeshes.forEach((arrow) => arrow.setEnabled(true));
-      this.edgeNodes.forEach((edge) => edge.setEnabled(true));
-      this.vertexNodes.forEach((node) => node.setEnabled(false));
+      this.edgeNodes.forEach((edge) => {
+        edge.setEnabled(true);
+        edge.isPickable = true;
+      });
+      this.vertexNodes.forEach((node) => {
+        node.setEnabled(false);
+        node.isPickable = false;
+      });
     } else if (mode === 'settlement' || mode === 'city') {
+      // Show vertex rings; hide edge anchors; enable vertex picking
       this.roadArrowMeshes.forEach((arrow) => arrow.setEnabled(false));
-      this.edgeNodes.forEach((edge) => edge.setEnabled(false));
-      this.vertexNodes.forEach((node) => node.setEnabled(true));
+      this.edgeNodes.forEach((edge) => {
+        edge.setEnabled(false);
+        edge.isPickable = false;
+      });
+      this.vertexNodes.forEach((node) => {
+        node.setEnabled(true);
+        node.isPickable = true;
+      });
     } else {
-      // Clean board view - hide all indicators and clear any placement preview
+      // Clean board view — hide all indicators, restore hex picking, clear preview
       this.clearPlacementPreview();
       this.roadArrowMeshes.forEach((arrow) => arrow.setEnabled(false));
-      this.edgeNodes.forEach((edge) => edge.setEnabled(false));
-      this.vertexNodes.forEach((node) => node.setEnabled(false));
+      this.edgeNodes.forEach((edge) => {
+        edge.setEnabled(false);
+        edge.isPickable = false;
+      });
+      this.vertexNodes.forEach((node) => {
+        node.setEnabled(false);
+        node.isPickable = false;
+      });
     }
   }
 

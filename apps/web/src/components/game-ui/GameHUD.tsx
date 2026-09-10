@@ -519,27 +519,29 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 <button
                   onClick={() => setTradeModalOpen(true)}
                   disabled={!canTrade}
-                  className={`w-12 h-12 md:w-14 md:h-14 rounded-2xl flex items-center justify-center shadow-xl border-2 transition-all ${
+                  className={`h-12 md:h-14 px-3 md:px-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl border-2 transition-all ${
                     canTrade
                       ? 'bg-gradient-to-b from-[#f59e0b] via-[#d97706] to-[#b45309] border-amber-200 text-[#2b170c] hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_6px_16px_rgba(245,158,11,0.6)]'
                       : 'bg-[#241710] border-amber-900/40 text-amber-200/30 cursor-not-allowed opacity-50'
                   }`}
                   title="Maritime & Harbor Trade"
                 >
-                  <Ship className="w-6 h-6 stroke-[2.5]" />
+                  <Ship className="w-5 h-5 stroke-[2.5]" />
+                  <span className="text-xs font-black uppercase tracking-wide">Trade</span>
                 </button>
 
                 {/* Dev Cards Button */}
                 <button
                   onClick={() => setDevCardPanelOpen(true)}
-                  className={`relative w-11 h-11 md:w-12 md:h-12 rounded-xl flex items-center justify-center shadow-xl border-2 transition-all ${
+                  className={`relative h-12 md:h-14 px-3 md:px-4 rounded-xl flex items-center justify-center gap-2 shadow-xl border-2 transition-all ${
                     (localPlayer?.devCards?.length ?? 0) > 0
                       ? 'bg-gradient-to-b from-[#7c3aed] to-[#5b21b6] border-purple-300 text-purple-100 hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_4px_12px_rgba(147,51,234,0.5)]'
-                      : 'bg-[#241710] border-amber-900/40 text-amber-200/30 hover:border-amber-700/50 cursor-pointer'
+                      : 'bg-[#241710] border-amber-900/40 text-amber-200/50 hover:border-purple-700/50 cursor-pointer'
                   }`}
                   title={`Development Cards (${localPlayer?.devCards?.length ?? 0} in hand)`}
                 >
-                  <Scroll className="w-5 h-5 stroke-[2.5]" />
+                  <Scroll className="w-4 h-4 stroke-[2.5]" />
+                  <span className="text-xs font-black uppercase tracking-wide">Dev Cards</span>
                   {(localPlayer?.devCards?.length ?? 0) > 0 && (
                     <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 text-white text-[10px] font-black flex items-center justify-center shadow-md border border-white/40">
                       {localPlayer?.devCards?.length}
