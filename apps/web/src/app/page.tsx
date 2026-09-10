@@ -17,6 +17,9 @@ import {
   Volume2,
   Sparkles,
   Award,
+  LogIn,
+  UserPlus,
+  Zap,
 } from 'lucide-react';
 import { ProfileModal } from '../components/modals/ProfileModal';
 import { FriendsModal } from '../components/modals/FriendsModal';
@@ -26,6 +29,7 @@ import { SettingsModal } from '../components/modals/SettingsModal';
 import { ScenarioModal } from '../components/lobby/ScenarioModal';
 import { CharacterModelViewer } from '../components/lobby/CharacterModelViewer';
 import { FullscreenButton } from '../components/common/FullscreenButton';
+import { AuthModal, UserProfile } from '../components/modals/AuthModal';
 
 export default function HomePage() {
   // Modal states
@@ -35,6 +39,17 @@ export default function HomePage() {
   const [isAlmanacOpen, setAlmanacOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isScenarioOpen, setScenarioOpen] = useState(false);
+  const [isAuthOpen, setAuthOpen] = useState(false);
+
+  // User profile from localStorage
+  const [userProfile, setUserProfile] = useState<UserProfile>({
+    id: 'guest_local',
+    username: 'Captain Amber',
+    avatar: '⚓',
+    isGuest: true,
+    level: 4,
+    xp: 1450,
+  });
 
   // Mode selection state
   const [lobbyMode, setLobbyMode] = useState<'solo' | 'online'>('solo');
@@ -53,7 +68,27 @@ export default function HomePage() {
       setInitialRoomCode(codeParam.toUpperCase());
       setScenarioOpen(true);
     }
+
+    // Restore auth profile from localStorage
+    const stored = localStorage.getItem('hexara_user_profile');
+    if (stored) {
+      try { setUserProfile(JSON.parse(stored)); } catch {}
+    }
+    // Ensure a stable player ID exists
+    if (!localStorage.getItem('hexara_player_id')) {
+      const id = 'guest_' + Math.random().toString(36).substring(2, 9);
+      localStorage.setItem('hexara_player_id', id);
+    }
   }, []);
+
+  const handleAuthSuccess = (profile: UserProfile) => {
+    setUserProfile(profile);
+    localStorage.setItem('hexara_user_profile', JSON.stringify(profile));
+    localStorage.setItem('hexara_player_id', profile.id);
+    sessionStorage.setItem('hexara_player_id', profile.id);
+    sessionStorage.setItem('hexara_player_name', profile.username);
+    setAuthOpen(false);
+  };
 
   const handleLaunchGame = (options: {
     scenarioId: string;
@@ -113,28 +148,31 @@ export default function HomePage() {
             {/* Hexagon Avatar */}
             <div className="w-13 h-13 clip-hex bg-gradient-to-b from-amber-400 via-amber-600 to-amber-900 p-[3px] flex items-center justify-center shadow-lg">
               <div className="w-full h-full clip-hex bg-[#2b170c] flex items-center justify-center text-amber-200 font-black text-lg">
-                ⚓
+                {userProfile.avatar}
               </div>
             </div>
             {/* Level Badge */}
             <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-amber-500 border border-amber-200 text-slate-950 text-[10px] font-black flex items-center justify-center shadow">
-              4
+              {userProfile.level ?? 1}
             </div>
           </div>
 
           <div className="flex flex-col text-left">
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-black text-amber-100 uppercase tracking-wide group-hover:text-amber-300 transition-colors">
-                Captain Amber
+                {userProfile.username}
               </span>
-              <span className="text-[10px] text-amber-400/80 font-mono font-bold">#HEX-7729</span>
+              {userProfile.isGuest && (
+                <span className="text-[9px] bg-amber-700/50 text-amber-300 px-1.5 py-0.5 rounded-full font-bold">GUEST</span>
+              )}
             </div>
             {/* XP Bar */}
             <div className="flex items-center gap-2 mt-0.5">
               <div className="w-24 h-1.5 rounded-full bg-black/60 border border-amber-500/30 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-amber-400 to-amber-200 w-3/4 rounded-full" />
+                <div className="h-full bg-gradient-to-r from-amber-400 to-amber-200 rounded-full"
+                  style={{ width: `${Math.min(100, ((userProfile.xp ?? 0) % 2000) / 20)}%` }} />
               </div>
-              <span className="text-[9px] text-amber-200/80 font-bold">1,450 / 2,000</span>
+              <span className="text-[9px] text-amber-200/80 font-bold">{(userProfile.xp ?? 0).toLocaleString()} XP</span>
             </div>
           </div>
         </button>
@@ -172,6 +210,17 @@ export default function HomePage() {
           >
             <ShoppingBag className="w-4 h-4" />
             <span className="hidden sm:inline">Shop</span>
+          </button>
+
+          {/* Auth: Login / Guest button */}
+          <button
+            onClick={() => setAuthOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider border transition-all
+              border-amber-600/50 bg-[#241710]/90 text-amber-200 hover:bg-amber-800/60 hover:border-amber-400"
+            title={userProfile.isGuest ? 'Sign In / Create Account' : 'Switch Account'}
+          >
+            <LogIn className="w-4 h-4" />
+            <span className="hidden sm:inline">{userProfile.isGuest ? 'Sign In' : 'Account'}</span>
           </button>
 
           {/* Fullscreen App Mode Button */}
@@ -354,6 +403,11 @@ export default function HomePage() {
         onLaunchGame={handleLaunchGame}
         initialMode={lobbyMode}
         initialRoomCode={initialRoomCode}
+      />
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setAuthOpen(false)}
+        onAuthSuccess={handleAuthSuccess}
       />
     </main>
   );

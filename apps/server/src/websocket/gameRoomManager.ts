@@ -84,15 +84,55 @@ export class GameRoomManager {
       game = createInitialGameState(gameId, initialPlayers);
       this.activeGames.set(gameId, game);
       this.actionCounters.set(gameId, 0);
-      logger.info({ gameId, hostPlayer: player.username }, 'New legacy game created');
+      logger.info({ gameId, hostPlayer: player.username }, 'New authoritative game created');
     } else {
       if (game.players[player.id]) {
         game.players[player.id].isConnected = true;
+        game.players[player.id].username = player.username;
         this.clearDisconnectGrace(gameId, player.id);
+      } else {
+        // Seat replacement: Find an AI bot and replace with this human player
+        const aiPlayerId = game.playerOrder.find((pId) => game!.players[pId]?.isAi);
+        if (aiPlayerId) {
+          const oldAi = game.players[aiPlayerId];
+          const newPlayer = {
+            ...oldAi,
+            id: player.id,
+            username: player.username,
+            isAi: false,
+            isConnected: true,
+          };
+          delete game.players[aiPlayerId];
+          game.players[player.id] = newPlayer;
+
+          // Update playerOrder
+          const idx = game.playerOrder.indexOf(aiPlayerId);
+          if (idx !== -1) {
+            game.playerOrder[idx] = player.id;
+          }
+
+          // Update any placed buildings/roads on board
+          for (const v of Object.values(game.board.vertices)) {
+            if (v.building && v.building.playerId === aiPlayerId) {
+              v.building.playerId = player.id;
+            }
+          }
+          for (const e of Object.values(game.board.edges)) {
+            if (e.road && e.road.playerId === aiPlayerId) {
+              e.road.playerId = player.id;
+            }
+          }
+
+          logger.info(
+            { gameId, newPlayerId: player.id, replacedBot: aiPlayerId, username: player.username },
+            'Human player took over AI seat in room'
+          );
+        }
       }
     }
 
     socket.join(`game:${gameId}`);
+    this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, game);
     this.resetWatchdog(game.id);
     this.checkAndTriggerAiMove(gameId);
 

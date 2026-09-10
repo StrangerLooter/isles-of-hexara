@@ -99,9 +99,17 @@ export default function GamePage() {
     const storedVp = Number(sessionStorage.getItem('hexara_vp_target') || '10');
     const storedSeed = Number(sessionStorage.getItem('hexara_board_seed') || '123456');
 
+    // Use the persistent player ID and name from localStorage
+    const persistedId = localStorage.getItem('hexara_player_id') || sessionStorage.getItem('hexara_player_id') || localPlayerId;
+    const persistedName = localStorage.getItem('hexara_username') || sessionStorage.getItem('hexara_username') || 'Captain Amber';
+    // Update gameStore so the rest of the app uses the right ID
+    if (persistedId !== localPlayerId) {
+      useGameStore.getState().setLocalPlayerId(persistedId);
+    }
+
     if (!useGameStore.getState().gameState && storedMode !== 'online') {
       const playerList = [
-        { id: localPlayerId, username: 'Captain Amber' },
+        { id: persistedId, username: persistedName },
         { id: 'ai_1', username: 'Candamir (Bot)', isAi: true },
         { id: 'ai_2', username: 'Louis (Bot)', isAi: true },
       ];
@@ -130,7 +138,8 @@ export default function GamePage() {
         'http://localhost:3001';
 
       const token = localStorage.getItem('hexara_auth_token') || sessionStorage.getItem('hexara_auth_token') || undefined;
-      const username = localStorage.getItem('hexara_username') || 'Captain Amber';
+      const username = localStorage.getItem('hexara_username') || sessionStorage.getItem('hexara_username') || 'Captain Voyager';
+      const myPlayerId = localStorage.getItem('hexara_player_id') || sessionStorage.getItem('hexara_player_id') || localPlayerId;
 
       const socket = io(gameServerUrl, {
         transports: ['websocket', 'polling'],
@@ -139,7 +148,7 @@ export default function GamePage() {
         auth: {
           token,
           username,
-          playerId: localPlayerId,
+          playerId: myPlayerId,
         },
       });
       socketRef.current = socket;
@@ -149,7 +158,7 @@ export default function GamePage() {
         socket.emit(CLIENT_EVENTS.JOIN_GAME, {
           code: roomCode,
           gameId: roomCode,
-          playerId: localPlayerId,
+          playerId: myPlayerId,
           username,
         });
       });
@@ -517,6 +526,15 @@ export default function GamePage() {
     if (buildMode === 'settlement' || buildMode === 'city') {
       setSelectedVertexId(vertexId);
       setSelectedEdgeId(null);
+
+      // In SETUP phases: immediately place the piece on click (no separate confirm needed)
+      const isSetup = gameState.phase.startsWith('SETUP');
+      if (isSetup) {
+        dispatchAction({ type: 'BUILD_SETTLEMENT', playerId: localPlayerId, vertexId });
+        setSelectedVertexId(null);
+        setBuildMode('road');
+      }
+      // In regular game phase, the user sees a preview and must click "Confirm" in the HUD
     }
   };
 
@@ -525,6 +543,15 @@ export default function GamePage() {
     if (buildMode === 'road') {
       setSelectedEdgeId(edgeId);
       setSelectedVertexId(null);
+
+      // In SETUP phases: immediately place road on click
+      const isSetup = gameState.phase.startsWith('SETUP');
+      if (isSetup) {
+        dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId });
+        setSelectedEdgeId(null);
+        setBuildMode('none');
+        dispatchAction({ type: 'END_TURN', playerId: localPlayerId });
+      }
     }
   };
 

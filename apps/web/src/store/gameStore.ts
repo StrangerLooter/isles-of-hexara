@@ -37,9 +37,23 @@ interface GameStore {
   setErrorToast: (msg: string | null) => void;
 }
 
+// Persistent per-browser player ID — stored in localStorage so the same
+// browser always gets the same identity across refreshes, but different
+// browsers (or incognito windows) get different IDs.
+function getOrCreatePlayerId(): string {
+  if (typeof window === 'undefined') return 'player_1';
+  let id = localStorage.getItem('hexara_player_id') || sessionStorage.getItem('hexara_player_id');
+  if (!id) {
+    id = 'guest_' + Math.random().toString(36).substring(2, 9);
+    localStorage.setItem('hexara_player_id', id);
+  }
+  sessionStorage.setItem('hexara_player_id', id);
+  return id;
+}
+
 export const useGameStore = create<GameStore>((set, get) => ({
   gameState: null,
-  localPlayerId: 'player_1',
+  localPlayerId: getOrCreatePlayerId(),
   buildMode: 'none',
   cameraMode: 'perspective',
   selectedVertexId: null,

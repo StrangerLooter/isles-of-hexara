@@ -352,9 +352,60 @@ export function setupSocketServer(httpServer: HttpServer): {
       });
     });
 
-    // I. DISCONNECT
+    // I. WEBRTC VOICE CHAT SIGNALING
+    socket.on('voice:join', (data: { roomCode: string }) => {
+      const room = data?.roomCode || currentGameCode;
+      if (!room) return;
+      socket.to(`game:${room}`).emit('voice:peer-joined', {
+        peerId: userId,
+        socketId: socket.id,
+        username,
+      });
+    });
+
+    socket.on('voice:signal', (data: { targetPeerId?: string; targetSocketId?: string; signal: any }) => {
+      if (data.targetSocketId) {
+        io.to(data.targetSocketId).emit('voice:signal', {
+          senderPeerId: userId,
+          senderSocketId: socket.id,
+          senderUsername: username,
+          signal: data.signal,
+        });
+      } else if (currentGameCode) {
+        socket.to(`game:${currentGameCode}`).emit('voice:signal', {
+          senderPeerId: userId,
+          senderSocketId: socket.id,
+          senderUsername: username,
+          signal: data.signal,
+        });
+      }
+    });
+
+    socket.on('voice:speaking', (data: { isSpeaking: boolean }) => {
+      if (currentGameCode) {
+        socket.to(`game:${currentGameCode}`).emit('voice:speaking-status', {
+          peerId: userId,
+          isSpeaking: data.isSpeaking,
+        });
+      }
+    });
+
+    socket.on('voice:leave', () => {
+      if (currentGameCode) {
+        socket.to(`game:${currentGameCode}`).emit('voice:peer-left', {
+          peerId: userId,
+        });
+      }
+    });
+
+    // J. DISCONNECT
     socket.on('disconnect', () => {
       logger.info({ socketId: socket.id, userId }, 'Socket client disconnected');
+      if (currentGameCode) {
+        socket.to(`game:${currentGameCode}`).emit('voice:peer-left', {
+          peerId: userId,
+        });
+      }
       rateLimiter.cleanup(socket.id);
       if (currentGameCode) {
         roomManager.handlePlayerDisconnect(socket.id, userId, currentGameCode);

@@ -30,6 +30,7 @@ import { LeftToolbar } from './LeftToolbar';
 import { FullscreenButton } from '../common/FullscreenButton';
 import { DevCardPanel, DevCardParams } from './DevCardPanel';
 import { TurnTimer } from './TurnTimer';
+import { VoiceChatControls } from './VoiceChatControls';
 
 interface GameHUDProps {
   onRollDice?: () => void;
@@ -267,6 +268,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 )}
               </div>
             </button>
+          )}
+
+          {/* Voice Chat Controls — only in online rooms */}
+          {matchMode === 'online' && roomCode && (
+            <VoiceChatControls roomCode={roomCode} />
           )}
 
           {/* Active Scenario Badge (Locked Match Rules) */}
