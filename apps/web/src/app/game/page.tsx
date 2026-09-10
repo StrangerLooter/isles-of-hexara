@@ -114,19 +114,29 @@ export default function GamePage() {
         (import.meta as any).env?.VITE_GAME_SERVER_URL ||
         'http://localhost:3001';
 
+      const token = localStorage.getItem('hexara_auth_token') || sessionStorage.getItem('hexara_auth_token') || undefined;
+      const roomCode = sessionStorage.getItem('hexara_room_code') || 'archipelago_1';
+      const username = localStorage.getItem('hexara_username') || 'Captain Amber';
+
       const socket = io(gameServerUrl, {
         transports: ['websocket', 'polling'],
-        timeout: 3000,
-        reconnectionAttempts: 3,
+        timeout: 5000,
+        reconnectionAttempts: 5,
+        auth: {
+          token,
+          username,
+          playerId: localPlayerId,
+        },
       });
       socketRef.current = socket;
 
       socket.on('connect', () => {
         setIsOnlineConnected(true);
         socket.emit(CLIENT_EVENTS.JOIN_GAME, {
-          gameId: 'archipelago_1',
+          code: roomCode,
+          gameId: roomCode,
           playerId: localPlayerId,
-          username: 'Captain Amber',
+          username,
         });
       });
 
@@ -134,6 +144,12 @@ export default function GamePage() {
         setGameState(state);
         if (state.phase === 'FINISHED' && state.winnerId === localPlayerId) {
           confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+        }
+      });
+
+      socket.on(SERVER_EVENTS.GAME_SYNC, (payload: { state: GameState }) => {
+        if (payload?.state) {
+          setGameState(payload.state);
         }
       });
 
@@ -403,12 +419,60 @@ export default function GamePage() {
           playerId: localPlayerId,
           hexId: action.hexId,
         });
+      } else if (action.type === 'DISCARD_RESOURCES') {
+        socketRef.current.emit(CLIENT_EVENTS.DISCARD_RESOURCES, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+          resources: action.resources,
+        });
+      } else if (action.type === 'STEAL_RESOURCE') {
+        socketRef.current.emit(CLIENT_EVENTS.STEAL_RESOURCE, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+          victimId: action.victimId,
+        });
+      } else if (action.type === 'BUY_DEV_CARD') {
+        socketRef.current.emit(CLIENT_EVENTS.BUY_DEV_CARD, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+        });
+      } else if (action.type === 'PLAY_DEV_CARD') {
+        socketRef.current.emit(CLIENT_EVENTS.PLAY_DEV_CARD, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+          card: action.card,
+          params: action.params,
+        });
       } else if (action.type === 'TRADE_BANK') {
         socketRef.current.emit(CLIENT_EVENTS.TRADE_BANK, {
           gameId: gameState?.id,
           playerId: localPlayerId,
           giving: action.giving,
           receiving: action.receiving,
+        });
+      } else if (action.type === 'TRADE_MARITIME') {
+        socketRef.current.emit(CLIENT_EVENTS.TRADE_MARITIME, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+          giving: action.giving,
+          receiving: action.receiving,
+        });
+      } else if (action.type === 'TRADE_PROPOSE') {
+        socketRef.current.emit(CLIENT_EVENTS.TRADE_PROPOSE, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+          offer: action.offer,
+          request: action.request,
+        });
+      } else if (action.type === 'TRADE_ACCEPT') {
+        socketRef.current.emit(CLIENT_EVENTS.TRADE_ACCEPT, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
+        });
+      } else if (action.type === 'TRADE_CANCEL') {
+        socketRef.current.emit(CLIENT_EVENTS.TRADE_CANCEL, {
+          gameId: gameState?.id,
+          playerId: localPlayerId,
         });
       } else if (action.type === 'END_TURN') {
         socketRef.current.emit(CLIENT_EVENTS.END_TURN, {

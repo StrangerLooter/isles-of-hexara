@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -b",
     "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test": "tsx --test test/schemas.test.ts test/lobby.test.ts test/reconnection.test.ts test/auth.test.ts test/integration.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
+    "socket.io-client": "^4.8.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

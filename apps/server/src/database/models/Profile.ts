@@ -60,4 +60,28 @@ export const ProfileRepository = {
     memoryProfiles.set(profile.userId, record);
     return record;
   },
+
+  async updateStatsAfterGame(
+    userId: string,
+    stats: { won: boolean; victoryPoints: number }
+  ): Promise<(IProfile & { _id: string }) | null> {
+    const existing = await this.findByUserId(userId);
+    if (!existing) return null;
+
+    const gainedXp = stats.victoryPoints * 50 + (stats.won ? 200 : 50);
+    const newExperience = (existing.experience ?? 0) + gainedXp;
+    const newLevel = Math.floor(newExperience / 1000) + 1;
+    const updated: IProfile = {
+      userId,
+      displayName: existing.displayName,
+      avatarId: existing.avatarId,
+      level: newLevel,
+      experience: newExperience,
+      gamesPlayed: (existing.gamesPlayed ?? 0) + 1,
+      wins: (existing.wins ?? 0) + (stats.won ? 1 : 0),
+      totalVictoryPoints: (existing.totalVictoryPoints ?? 0) + stats.victoryPoints,
+    };
+
+    return this.createOrUpdate(updated);
+  },
 };

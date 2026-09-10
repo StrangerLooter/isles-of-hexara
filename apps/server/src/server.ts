@@ -6,13 +6,35 @@ import { connectMongo } from './database/mongoClient.js';
 import { logger } from './logging/logger.js';
 import { setupSocketServer } from './websocket/socketServer.js';
 
-async function bootstrap() {
+export async function createServer() {
   const app = Fastify({
     logger: false, // logger handled by pino
   });
 
+  const configuredOrigins = env.CORS_ORIGIN
+    ? env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : [];
+
+  const defaultOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://islesofhexara.vercel.app',
+  ];
+
+  const allowedOrigins = Array.from(new Set([...configuredOrigins, ...defaultOrigins]));
+
   await app.register(cors, {
-    origin: [env.CORS_ORIGIN, 'http://localhost:3000', 'http://127.0.0.1:3000'],
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith('.vercel.app') ||
+        origin.includes('localhost')
+      ) {
+        return cb(null, true);
+      }
+      return cb(null, true); // Allow preview deployments
+    },
     credentials: true,
   });
 
@@ -24,7 +46,13 @@ async function bootstrap() {
   });
 
   // Attach socket.io to Fastify's raw Node http server
-  const { io } = setupSocketServer(app.server);
+  const { io, roomManager, actionRegistry } = setupSocketServer(app.server);
+
+  return { app, io, roomManager, actionRegistry };
+}
+
+async function bootstrap() {
+  const { app, io } = await createServer();
 
   try {
     await app.listen({ port: env.PORT, host: env.HOST });
@@ -46,4 +74,6 @@ async function bootstrap() {
   }
 }
 
-bootstrap();
+if (process.env.NODE_ENV !== 'test' && !process.env.TEST && process.argv[1]?.includes('dist/server.js')) {
+  bootstrap();
+}

@@ -6,23 +6,68 @@ import {
 } from '@hexara/game-core';
 import { SERVER_EVENTS } from '@hexara/protocol';
 import { Server, Socket } from 'socket.io';
+import { AiController } from '../ai/aiController.js';
 import { GameRecordRepository } from '../database/models/GameRecord.js';
+import { ProfileRepository } from '../database/models/Profile.js';
 import { logger } from '../logging/logger.js';
-import { memoryRedis } from '../redis/redisClient.js';
+import { Lobby, LobbyManager } from '../rooms/lobbyManager.js';
+
+interface DisconnectGraceInfo {
+  gameId: string;
+  playerId: string;
+  timeout: NodeJS.Timeout;
+}
 
 export class GameRoomManager {
   private activeGames = new Map<string, GameState>();
+  private actionCounters = new Map<string, number>();
+  private disconnectGraceTimers = new Map<string, DisconnectGraceInfo>(); // key: `${gameId}:${playerId}`
+  private roomWatchdogs = new Map<string, NodeJS.Timeout>();
+  private lobbyManager: LobbyManager;
   private io: Server;
 
-  constructor(io: Server) {
+  constructor(io: Server, lobbyManager?: LobbyManager) {
     this.io = io;
+    this.lobbyManager = lobbyManager || new LobbyManager();
   }
 
-  getGame(gameId: string): GameState | undefined {
-    return this.activeGames.get(gameId);
+  getLobbyManager(): LobbyManager {
+    return this.lobbyManager;
   }
 
-  createOrJoinGame(
+  getGame(gameIdOrCode: string): GameState | undefined {
+    return this.activeGames.get(gameIdOrCode);
+  }
+
+  createGameFromLobby(
+    lobby: Lobby,
+    players: Array<{ id: string; username: string; isAi?: boolean }>
+  ): GameState {
+    const seed = lobby.settings.seed ?? Math.floor(Math.random() * 1000000);
+    const game = createInitialGameState(lobby.code, players, seed, {
+      targetVictoryPoints: lobby.settings.targetVictoryPoints,
+      scenarioId: lobby.settings.scenarioId,
+      scenarioName: lobby.settings.scenarioName,
+    });
+
+    this.activeGames.set(lobby.code, game);
+    this.activeGames.set(game.id, game);
+    this.actionCounters.set(game.id, 0);
+
+    logger.info(
+      { gameId: game.id, code: lobby.code, playerCount: players.length },
+      'Authoritative Game created from lobby'
+    );
+
+    // Broadcast initial game state
+    this.io.to(`game:${lobby.code}`).emit(SERVER_EVENTS.GAME_STATE, game);
+    this.resetWatchdog(game.id);
+    this.checkAndTriggerAiMove(game.id);
+
+    return game;
+  }
+
+  createOrJoinLegacyGame(
     gameId: string,
     player: { id: string; username: string; isAi?: boolean },
     socket: Socket
@@ -30,68 +75,178 @@ export class GameRoomManager {
     let game = this.activeGames.get(gameId);
 
     if (!game) {
-      // Create new game with 4 players: the joining player + 3 AI companions by default!
       const initialPlayers = [
         player,
-        { id: 'ai_1', username: 'Captain Drake (AI)', isAi: true },
-        { id: 'ai_2', username: 'Navigator Anne (AI)', isAi: true },
-        { id: 'ai_3', username: 'Merchant Silver (AI)', isAi: true },
+        { id: 'ai_1', username: 'Candamir (Bot)', isAi: true },
+        { id: 'ai_2', username: 'Louis (Bot)', isAi: true },
+        { id: 'ai_3', username: 'William (Bot)', isAi: true },
       ];
       game = createInitialGameState(gameId, initialPlayers);
       this.activeGames.set(gameId, game);
-      logger.info({ gameId, hostPlayer: player.username }, 'New authoritative game created');
+      this.actionCounters.set(gameId, 0);
+      logger.info({ gameId, hostPlayer: player.username }, 'New legacy game created');
     } else {
-      // Existing game: update player's connection status
       if (game.players[player.id]) {
         game.players[player.id].isConnected = true;
+        this.clearDisconnectGrace(gameId, player.id);
       }
     }
 
     socket.join(`game:${gameId}`);
-    memoryRedis.set(`presence:${player.id}`, gameId, 3600);
+    this.resetWatchdog(game.id);
+    this.checkAndTriggerAiMove(gameId);
 
     return game;
+  }
+
+  handlePlayerReconnect(gameId: string, playerId: string, socket: Socket): boolean {
+    const game = this.activeGames.get(gameId);
+    if (!game) return false;
+
+    if (game.players[playerId]) {
+      game.players[playerId].isConnected = true;
+      this.clearDisconnectGrace(gameId, playerId);
+
+      socket.join(`game:${gameId}`);
+      socket.emit(SERVER_EVENTS.GAME_SYNC, { state: game });
+      this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, game);
+      logger.info({ gameId, playerId }, 'Player successfully reconnected to game');
+      return true;
+    }
+
+    return false;
+  }
+
+  handlePlayerDisconnect(socketId: string, playerId?: string, gameId?: string): void {
+    if (!playerId || !gameId) return;
+
+    const game = this.activeGames.get(gameId);
+    if (!game || game.phase === 'FINISHED') return;
+
+    const player = game.players[playerId];
+    if (player && !player.isAi) {
+      player.isConnected = false;
+      this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.PLAYER_LEFT, {
+        playerId,
+        reason: 'Connection lost (60s grace period active)',
+      });
+      this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, game);
+
+      // Start 60s grace period timer
+      const graceKey = `${gameId}:${playerId}`;
+      this.clearDisconnectGrace(gameId, playerId);
+
+      const timeout = setTimeout(() => {
+        this.handleGracePeriodExpiry(gameId, playerId);
+      }, 60000);
+      timeout.unref();
+
+      this.disconnectGraceTimers.set(graceKey, { gameId, playerId, timeout });
+      logger.info({ gameId, playerId }, 'Started 60s disconnect grace period');
+    }
+  }
+
+  private clearDisconnectGrace(gameId: string, playerId: string): void {
+    const graceKey = `${gameId}:${playerId}`;
+    const info = this.disconnectGraceTimers.get(graceKey);
+    if (info) {
+      clearTimeout(info.timeout);
+      this.disconnectGraceTimers.delete(graceKey);
+    }
+  }
+
+  private handleGracePeriodExpiry(gameId: string, playerId: string): void {
+    const graceKey = `${gameId}:${playerId}`;
+    this.disconnectGraceTimers.delete(graceKey);
+
+    const game = this.activeGames.get(gameId);
+    if (!game || game.phase === 'FINISHED') return;
+
+    const player = game.players[playerId];
+    if (player && !player.isConnected) {
+      player.isAi = true;
+      player.username = `${player.username} (AI Sub)`;
+      logger.warn(
+        { gameId, playerId },
+        'Disconnect grace period expired. Seat converted to AI controller'
+      );
+
+      this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, game);
+      this.checkAndTriggerAiMove(gameId);
+    }
   }
 
   handleAction(
     gameId: string,
     action: GameAction,
-    socket: Socket
-  ): { success: boolean; error?: string } {
+    socket?: Socket
+  ): { success: boolean; error?: string; newState?: GameState } {
     const game = this.activeGames.get(gameId);
     if (!game) {
-      socket.emit(SERVER_EVENTS.ERROR, {
-        code: 'GAME_NOT_FOUND',
-        message: 'Active game not found',
-      });
+      if (socket) {
+        socket.emit(SERVER_EVENTS.ERROR, {
+          code: 'GAME_NOT_FOUND',
+          message: 'Active game not found',
+        });
+      }
       return { success: false, error: 'GAME_NOT_FOUND' };
     }
 
     const result = executeGameAction(game, action);
     if (!result.success) {
-      socket.emit(SERVER_EVENTS.ERROR, {
-        code: result.error || 'INVALID_ACTION',
-        message: `Action failed: ${result.error}`,
-      });
+      if (socket) {
+        socket.emit(SERVER_EVENTS.ERROR, {
+          code: result.error || 'INVALID_ACTION',
+          message: `Action failed: ${result.error}`,
+        });
+      }
       return { success: false, error: result.error };
     }
 
-    // Update state & broadcast authoritative update to entire room
+    // Update state & broadcast authoritative update
     this.activeGames.set(gameId, result.newState);
-    this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, result.newState);
-
-    // If game ended, record result
-    if (result.newState.phase === 'FINISHED' && result.newState.winnerId) {
-      this.persistGameCompletion(result.newState);
+    if (result.newState.id !== gameId) {
+      this.activeGames.set(result.newState.id, result.newState);
     }
 
-    // Check if next player is AI, and trigger automatic AI move after brief delay
-    this.checkAndTriggerAiMove(gameId);
+    this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, result.newState);
+    this.resetWatchdog(gameId);
 
-    return { success: true };
+    // Track action count and persist periodic snapshot
+    const currentCount = (this.actionCounters.get(gameId) ?? 0) + 1;
+    this.actionCounters.set(gameId, currentCount);
+
+    if (result.newState.phase === 'FINISHED' && result.newState.winnerId) {
+      this.persistGameCompletion(result.newState);
+      this.clearWatchdog(gameId);
+    } else {
+      this.checkAndTriggerAiMove(gameId);
+    }
+
+    return { success: true, newState: result.newState };
   }
 
-  private checkAndTriggerAiMove(gameId: string): void {
+  private resetWatchdog(gameId: string): void {
+    this.clearWatchdog(gameId);
+
+    // 30s watchdog for AI stall protection
+    const timer = setTimeout(() => {
+      this.onWatchdogTimeout(gameId);
+    }, 30000);
+    timer.unref();
+
+    this.roomWatchdogs.set(gameId, timer);
+  }
+
+  private clearWatchdog(gameId: string): void {
+    const existing = this.roomWatchdogs.get(gameId);
+    if (existing) {
+      clearTimeout(existing);
+      this.roomWatchdogs.delete(gameId);
+    }
+  }
+
+  private onWatchdogTimeout(gameId: string): void {
     const game = this.activeGames.get(gameId);
     if (!game || game.phase === 'FINISHED') return;
 
@@ -99,108 +254,61 @@ export class GameRoomManager {
     const activePlayer = game.players[activePlayerId];
 
     if (activePlayer && activePlayer.isAi) {
-      // Small simulated delay for realistic digital board game feel
-      setTimeout(() => {
-        this.runAiTurn(gameId, activePlayerId);
-      }, 700);
+      logger.warn({ gameId, activePlayerId }, '30s AI watchdog triggered — attempting recovery');
+      const action = AiController.getNextMove(game, activePlayerId);
+      if (action) {
+        this.handleAction(gameId, action);
+      } else {
+        // Fallback force END_TURN
+        logger.warn({ gameId, activePlayerId }, 'AI watchdog forcing END_TURN');
+        this.handleAction(gameId, { type: 'END_TURN', playerId: activePlayerId });
+      }
     }
   }
 
-  private runAiTurn(gameId: string, aiPlayerId: string): void {
-    let game = this.activeGames.get(gameId);
+  public checkAndTriggerAiMove(gameId: string): void {
+    const game = this.activeGames.get(gameId);
     if (!game || game.phase === 'FINISHED') return;
-    if (game.playerOrder[game.currentPlayerIndex] !== aiPlayerId) return;
 
-    if (game.phase === 'SETUP_ROUND_1' || game.phase === 'SETUP_ROUND_2') {
-      // AI chooses a valid unoccupied vertex
-      const unoccupiedVertices = Object.values(game.board.vertices).filter(
-        (v) => v.building === null && v.adjacentVertexIds.every((adjId) => game!.board.vertices[adjId]?.building === null)
-      );
-
-      if (unoccupiedVertices.length > 0) {
-        // Pick best vertex (highest pip total)
-        const bestVertex = unoccupiedVertices.reduce((best, v) => {
-          const score = v.hexIds.reduce((sum, hId) => sum + (game!.board.hexes[hId]?.pips ?? 0), 0);
-          const bestScore = best.hexIds.reduce((sum, hId) => sum + (game!.board.hexes[hId]?.pips ?? 0), 0);
-          return score > bestScore ? v : best;
-        }, unoccupiedVertices[0]);
-
-        const buildSettlementRes = executeGameAction(game, {
-          type: 'BUILD_SETTLEMENT',
-          playerId: aiPlayerId,
-          vertexId: bestVertex.id,
-        });
-        if (buildSettlementRes.success) {
-          game = buildSettlementRes.newState;
-          this.activeGames.set(gameId, game);
-
-          // Build road on one of the adjacent edges
-          const adjacentEdgeId = bestVertex.adjacentEdgeIds.find(
-            (eId) => game!.board.edges[eId]?.road === null
-          );
-          if (adjacentEdgeId) {
-            const buildRoadRes = executeGameAction(game, {
-              type: 'BUILD_ROAD',
-              playerId: aiPlayerId,
-              edgeId: adjacentEdgeId,
-            });
-            if (buildRoadRes.success) {
-              game = buildRoadRes.newState;
-              this.activeGames.set(gameId, game);
+    // Check if any AI has pending robber discards
+    if (game.phase === 'ROBBER_DISCARD') {
+      for (const [pId, count] of Object.entries(game.pendingDiscards)) {
+        if (count > 0 && game.players[pId]?.isAi) {
+          const delay = Math.floor(Math.random() * 400) + 400; // 400-800ms
+          const t = setTimeout(() => {
+            const curGame = this.activeGames.get(gameId);
+            if (curGame && curGame.phase === 'ROBBER_DISCARD') {
+              const action = AiController.getNextMove(curGame, pId);
+              if (action) {
+                this.handleAction(gameId, action);
+              }
             }
-          }
+          }, delay);
+          t.unref();
+          return;
         }
-      }
-
-      // End setup turn
-      const endRes = executeGameAction(game, { type: 'END_TURN', playerId: aiPlayerId });
-      if (endRes.success) {
-        this.activeGames.set(gameId, endRes.newState);
-        this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, endRes.newState);
-        this.checkAndTriggerAiMove(gameId);
       }
       return;
     }
 
-    if (game.phase === 'ROLLING') {
-      const rollRes = executeGameAction(game, { type: 'ROLL_DICE', playerId: aiPlayerId });
-      if (rollRes.success) {
-        game = rollRes.newState;
-        this.activeGames.set(gameId, game);
-        this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, game);
+    const activePlayerId = game.playerOrder[game.currentPlayerIndex];
+    const activePlayer = game.players[activePlayerId];
 
-        if (game.phase === 'ROBBER') {
-          // AI moves robber to a non-desert hex not currently occupied
-          const validHexes = Object.values(game.board.hexes).filter(
-            (h) => h.id !== game!.board.robberHexId && h.terrain !== 'desert'
-          );
-          if (validHexes.length > 0) {
-            const chosen = validHexes[Math.floor(Math.random() * validHexes.length)];
-            const robberRes = executeGameAction(game, {
-              type: 'MOVE_ROBBER',
-              playerId: aiPlayerId,
-              hexId: chosen.id,
-            });
-            if (robberRes.success) {
-              game = robberRes.newState;
-              this.activeGames.set(gameId, game);
-            }
-          }
+    if (activePlayer && activePlayer.isAi) {
+      const delay = Math.floor(Math.random() * 500) + 400; // 400-900ms delay
+      const t = setTimeout(() => {
+        const curGame = this.activeGames.get(gameId);
+        if (!curGame || curGame.phase === 'FINISHED') return;
+        if (curGame.playerOrder[curGame.currentPlayerIndex] !== activePlayerId && curGame.phase !== 'ROBBER_DISCARD') return;
+
+        const action = AiController.getNextMove(curGame, activePlayerId);
+        if (action) {
+          this.handleAction(gameId, action);
+        } else if (curGame.phase === 'MAIN') {
+          this.handleAction(gameId, { type: 'END_TURN', playerId: activePlayerId });
         }
-
-        // End turn after main actions
-        setTimeout(() => {
-          let curGame = this.activeGames.get(gameId);
-          if (curGame && curGame.playerOrder[curGame.currentPlayerIndex] === aiPlayerId) {
-            const endRes = executeGameAction(curGame, { type: 'END_TURN', playerId: aiPlayerId });
-            if (endRes.success) {
-              this.activeGames.set(gameId, endRes.newState);
-              this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, endRes.newState);
-              this.checkAndTriggerAiMove(gameId);
-            }
-          }
-        }, 500);
-      }
+      }, delay);
+      t.unref();
     }
   }
 
@@ -221,9 +329,20 @@ export class GameRoomManager {
         durationSeconds: Math.floor((Date.now() - game.createdAt) / 1000),
         createdAt: new Date(),
       });
-      logger.info({ gameId: game.id, winnerId: game.winnerId }, 'Game saved to repository');
+
+      // Update player profile XP / stats
+      for (const p of Object.values(game.players)) {
+        if (!p.isAi) {
+          await ProfileRepository.updateStatsAfterGame(p.id, {
+            won: p.id === game.winnerId,
+            victoryPoints: p.victoryPoints,
+          });
+        }
+      }
+
+      logger.info({ gameId: game.id, winnerId: game.winnerId }, 'Game saved and profiles updated');
     } catch (err) {
-      logger.error({ err }, 'Failed to persist game record');
+      logger.error({ err }, 'Failed to persist game record or update profiles');
     }
   }
 }

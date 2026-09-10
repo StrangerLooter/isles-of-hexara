@@ -44,7 +44,11 @@ const memoryGameRecords = new Map<string, IGameRecord & { _id: string }>();
 export const GameRecordRepository = {
   async save(record: IGameRecord): Promise<void> {
     if (isMongoConnected()) {
-      await GameRecordModel.create(record);
+      await GameRecordModel.findOneAndUpdate(
+        { gameId: record.gameId },
+        record,
+        { upsert: true, new: true }
+      );
     } else {
       memoryGameRecords.set(record.gameId, {
         _id: `rec_${Date.now()}`,
@@ -53,10 +57,23 @@ export const GameRecordRepository = {
     }
   },
 
-  async listRecent(limit = 10): Promise<IGameRecord[]> {
+  async findByGameId(gameId: string): Promise<(IGameRecord & { _id: string }) | null> {
     if (isMongoConnected()) {
-      return (await GameRecordModel.find().sort({ createdAt: -1 }).limit(limit).lean()) as unknown as IGameRecord[];
+      const doc = (await GameRecordModel.findOne({ gameId }).lean()) as (IGameRecord & { _id: any }) | null;
+      return doc ? { ...doc, _id: String(doc._id) } : null;
     }
-    return Array.from(memoryGameRecords.values()).slice(-limit);
+    return memoryGameRecords.get(gameId) ?? null;
+  },
+
+  async listRecent(limit = 10, userId?: string): Promise<IGameRecord[]> {
+    if (isMongoConnected()) {
+      const query = userId ? { 'playerResults.playerId': userId } : {};
+      return (await GameRecordModel.find(query).sort({ createdAt: -1 }).limit(limit).lean()) as unknown as IGameRecord[];
+    }
+    let records = Array.from(memoryGameRecords.values());
+    if (userId) {
+      records = records.filter((r) => r.playerResults.some((p) => p.playerId === userId));
+    }
+    return records.slice(-limit).reverse();
   },
 };

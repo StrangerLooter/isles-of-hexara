@@ -1,37 +1,130 @@
 import {
-  buildCitySchema,
-  buildRoadSchema,
-  buildSettlementSchema,
   chatMessageSchema,
   CLIENT_EVENTS,
-  endTurnSchema,
+  createGameSchema,
   joinGameSchema,
-  moveRobberSchema,
-  rollDiceSchema,
+  kickSeatSchema,
+  leaveGameSchema,
   SERVER_EVENTS,
-  tradeBankSchema,
+  setReadySchema,
+  startGameSchema,
 } from '@hexara/protocol';
 import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
+import { signJwt, verifyJwt } from '../auth/jwt.js';
 import { env } from '../config/env.js';
 import { logger } from '../logging/logger.js';
+import { ActionRegistry } from './actionRegistry.js';
 import { GameRoomManager } from './gameRoomManager.js';
+import { SocketRateLimiter } from './rateLimiter.js';
 
-export function setupSocketServer(httpServer: HttpServer): { io: Server; roomManager: GameRoomManager } {
+export function setupSocketServer(httpServer: HttpServer): {
+  io: Server;
+  roomManager: GameRoomManager;
+  actionRegistry: ActionRegistry;
+} {
+  const allowedOrigins = [
+    env.CORS_ORIGIN,
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://islesofhexara.vercel.app',
+  ];
+
   const io = new Server(httpServer, {
     cors: {
-      origin: [env.CORS_ORIGIN, 'http://localhost:3000', 'http://127.0.0.1:3000'],
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (
+          allowedOrigins.includes(origin) ||
+          origin.endsWith('.vercel.app') ||
+          origin.includes('localhost')
+        ) {
+          return callback(null, true);
+        }
+        return callback(null, true); // Permissive for preview deploys
+      },
       methods: ['GET', 'POST'],
       credentials: true,
     },
+    transports: ['websocket', 'polling'],
   });
 
   const roomManager = new GameRoomManager(io);
+  const lobbyManager = roomManager.getLobbyManager();
+  const actionRegistry = new ActionRegistry();
+  const rateLimiter = new SocketRateLimiter();
+
+  // 1. Socket Authentication Middleware
+  io.use((socket: Socket, next) => {
+    const auth = socket.handshake.auth || {};
+    const query = socket.handshake.query || {};
+    const token =
+      (auth.token as string) ||
+      (query.token as string) ||
+      socket.handshake.headers.authorization?.replace(/^Bearer\s+/i, '');
+
+    if (token) {
+      const verified = verifyJwt(token);
+      if (verified) {
+        socket.data.userId = verified.sub;
+        socket.data.username = verified.name;
+        socket.data.isGuest = verified.guest ?? true;
+        return next();
+      }
+    }
+
+    // Fallback: If username/guestId provided or in dev mode, create guest identity
+    const providedName = (auth.username as string) || (query.username as string) || 'Captain Voyager';
+    const guestId = (auth.playerId as string) || (query.playerId as string) || `guest_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    
+    socket.data.userId = guestId;
+    socket.data.username = providedName;
+    socket.data.isGuest = true;
+    socket.data.token = signJwt({ sub: guestId, name: providedName, guest: true });
+
+    next();
+  });
 
   io.on('connection', (socket: Socket) => {
-    logger.info({ socketId: socket.id }, 'Socket client connected');
+    const userId = socket.data.userId;
+    const username = socket.data.username;
+    logger.info({ socketId: socket.id, userId, username }, 'Socket connected');
 
-    // 1. Join Game
+    // Attach currentGameCode tracker
+    let currentGameCode: string | undefined;
+
+    // A. LOBBY: Create Game
+    socket.on(CLIENT_EVENTS.CREATE_GAME, (data: unknown) => {
+      const parsed = createGameSchema.safeParse(data);
+      if (!parsed.success) {
+        socket.emit(SERVER_EVENTS.ERROR, {
+          code: 'INVALID_PAYLOAD',
+          message: parsed.error.message,
+        });
+        return;
+      }
+
+      const lobby = lobbyManager.createLobby(
+        { playerId: userId, username },
+        {
+          scenarioId: parsed.data.scenarioId,
+          scenarioName: parsed.data.scenarioName,
+          targetVictoryPoints: parsed.data.targetVictoryPoints,
+          maxPlayers: parsed.data.maxPlayers,
+          mode: parsed.data.mode,
+          seed: parsed.data.seed,
+        }
+      );
+
+      currentGameCode = lobby.code;
+      socket.join(`game:${lobby.code}`);
+      socket.join(`lobby:${lobby.code}`);
+
+      socket.emit(SERVER_EVENTS.LOBBY_STATE, lobbyManager.toPayload(lobby));
+      logger.info({ code: lobby.code, host: username }, 'Lobby created');
+    });
+
+    // B. LOBBY: Join Game (by Room Code or legacy gameId)
     socket.on(CLIENT_EVENTS.JOIN_GAME, (data: unknown) => {
       const parsed = joinGameSchema.safeParse(data);
       if (!parsed.success) {
@@ -41,87 +134,233 @@ export function setupSocketServer(httpServer: HttpServer): { io: Server; roomMan
         });
         return;
       }
-      const { gameId, playerId, username } = parsed.data;
-      const state = roomManager.createOrJoinGame(gameId, { id: playerId, username }, socket);
-      socket.emit(SERVER_EVENTS.GAME_STATE, state);
-      io.to(`game:${gameId}`).emit(SERVER_EVENTS.PLAYER_JOINED, { playerId, username });
+
+      const { code, gameId, playerId } = parsed.data;
+      const effectivePlayerId = playerId || userId;
+      const targetCode = code || gameId;
+
+      if (!targetCode) {
+        socket.emit(SERVER_EVENTS.ERROR, {
+          code: 'ROOM_NOT_FOUND',
+          message: 'Room code or gameId required',
+        });
+        return;
+      }
+
+      // Check if this is an active game reconnection
+      const activeGame = roomManager.getGame(targetCode);
+      if (activeGame) {
+        const reconnected = roomManager.handlePlayerReconnect(
+          targetCode,
+          effectivePlayerId,
+          socket
+        );
+        if (reconnected) {
+          currentGameCode = targetCode;
+          return;
+        }
+      }
+
+      // Otherwise attempt joining lobby
+      const joinRes = lobbyManager.joinLobby(targetCode, {
+        playerId: effectivePlayerId,
+        username,
+      });
+
+      if (!joinRes.success || !joinRes.lobby) {
+        // If lobby doesn't exist, check legacy game fallback
+        if (gameId && !joinRes.lobby) {
+          const legacyState = roomManager.createOrJoinLegacyGame(
+            gameId,
+            { id: effectivePlayerId, username },
+            socket
+          );
+          currentGameCode = gameId;
+          socket.emit(SERVER_EVENTS.GAME_STATE, legacyState);
+          io.to(`game:${gameId}`).emit(SERVER_EVENTS.PLAYER_JOINED, {
+            playerId: effectivePlayerId,
+            username,
+          });
+          return;
+        }
+
+        socket.emit(SERVER_EVENTS.ERROR, {
+          code: joinRes.error || 'ROOM_NOT_FOUND',
+          message: `Unable to join: ${joinRes.error}`,
+        });
+        return;
+      }
+
+      const lobby = joinRes.lobby;
+      currentGameCode = lobby.code;
+      socket.join(`game:${lobby.code}`);
+      socket.join(`lobby:${lobby.code}`);
+
+      io.to(`game:${lobby.code}`).emit(
+        SERVER_EVENTS.LOBBY_STATE,
+        lobbyManager.toPayload(lobby)
+      );
+      io.to(`game:${lobby.code}`).emit(SERVER_EVENTS.PLAYER_JOINED, {
+        playerId: effectivePlayerId,
+        username,
+      });
     });
 
-    // 2. Roll Dice
-    socket.on(CLIENT_EVENTS.ROLL_DICE, (data: unknown) => {
-      const parsed = rollDiceSchema.safeParse(data);
+    // C. LOBBY: Set Ready
+    socket.on(CLIENT_EVENTS.SET_READY, (data: unknown) => {
+      const parsed = setReadySchema.safeParse(data);
       if (!parsed.success) return;
-      const { gameId, playerId } = parsed.data;
-      roomManager.handleAction(gameId, { type: 'ROLL_DICE', playerId }, socket);
+
+      const code = parsed.data.code || currentGameCode;
+      if (!code) return;
+
+      const result = lobbyManager.setReady(code, userId, parsed.data.ready);
+      if (result.success && result.lobby) {
+        io.to(`game:${result.lobby.code}`).emit(
+          SERVER_EVENTS.LOBBY_STATE,
+          lobbyManager.toPayload(result.lobby)
+        );
+      }
     });
 
-    // 3. Build Road
-    socket.on(CLIENT_EVENTS.BUILD_ROAD, (data: unknown) => {
-      const parsed = buildRoadSchema.safeParse(data);
+    // D. LOBBY: Kick Seat
+    socket.on(CLIENT_EVENTS.KICK_SEAT, (data: unknown) => {
+      const parsed = kickSeatSchema.safeParse(data);
       if (!parsed.success) return;
-      const { gameId, playerId, edgeId } = parsed.data;
-      roomManager.handleAction(gameId, { type: 'BUILD_ROAD', playerId, edgeId }, socket);
+
+      const code = parsed.data.code || currentGameCode;
+      if (!code) return;
+
+      const result = lobbyManager.kickSeat(code, userId, parsed.data.seatPlayerId);
+      if (result.success && result.lobby) {
+        io.to(`game:${result.lobby.code}`).emit(
+          SERVER_EVENTS.LOBBY_STATE,
+          lobbyManager.toPayload(result.lobby)
+        );
+        if (result.kickedPlayerId) {
+          io.to(`game:${result.lobby.code}`).emit(SERVER_EVENTS.PLAYER_LEFT, {
+            playerId: result.kickedPlayerId,
+            reason: 'Kicked by host',
+          });
+        }
+      }
     });
 
-    // 4. Build Settlement
-    socket.on(CLIENT_EVENTS.BUILD_SETTLEMENT, (data: unknown) => {
-      const parsed = buildSettlementSchema.safeParse(data);
-      if (!parsed.success) return;
-      const { gameId, playerId, vertexId } = parsed.data;
-      roomManager.handleAction(gameId, { type: 'BUILD_SETTLEMENT', playerId, vertexId }, socket);
+    // E. LOBBY: Leave Game
+    socket.on(CLIENT_EVENTS.LEAVE_GAME, (data: unknown) => {
+      const parsed = leaveGameSchema.safeParse(data);
+      const code = parsed.success && parsed.data.code ? parsed.data.code : currentGameCode;
+      if (!code) return;
+
+      const result = lobbyManager.leaveLobby(code, userId);
+      socket.leave(`game:${code}`);
+      socket.leave(`lobby:${code}`);
+
+      if (result.success && result.lobby) {
+        io.to(`game:${code}`).emit(
+          SERVER_EVENTS.LOBBY_STATE,
+          lobbyManager.toPayload(result.lobby)
+        );
+        io.to(`game:${code}`).emit(SERVER_EVENTS.PLAYER_LEFT, {
+          playerId: userId,
+          reason: 'Player left room',
+        });
+      }
+      currentGameCode = undefined;
     });
 
-    // 5. Build City
-    socket.on(CLIENT_EVENTS.BUILD_CITY, (data: unknown) => {
-      const parsed = buildCitySchema.safeParse(data);
-      if (!parsed.success) return;
-      const { gameId, playerId, vertexId } = parsed.data;
-      roomManager.handleAction(gameId, { type: 'BUILD_CITY', playerId, vertexId }, socket);
+    // F. LOBBY: Start Game
+    socket.on(CLIENT_EVENTS.START_GAME, (data: unknown) => {
+      const parsed = startGameSchema.safeParse(data);
+      const code = parsed.success && parsed.data.code ? parsed.data.code : currentGameCode;
+      if (!code) return;
+
+      const startRes = lobbyManager.startGame(code, userId);
+      if (!startRes.success || !startRes.lobby || !startRes.players) {
+        socket.emit(SERVER_EVENTS.ERROR, {
+          code: startRes.error || 'INVALID_ACTION',
+          message: `Cannot start game: ${startRes.error}`,
+        });
+        return;
+      }
+
+      // Initialize game state and broadcast
+      const game = roomManager.createGameFromLobby(startRes.lobby, startRes.players);
+      io.to(`game:${code}`).emit(
+        SERVER_EVENTS.LOBBY_STATE,
+        lobbyManager.toPayload(startRes.lobby)
+      );
+      io.to(`game:${code}`).emit(SERVER_EVENTS.GAME_STATE, game);
     });
 
-    // 6. Move Robber
-    socket.on(CLIENT_EVENTS.MOVE_ROBBER, (data: unknown) => {
-      const parsed = moveRobberSchema.safeParse(data);
-      if (!parsed.success) return;
-      const { gameId, playerId, hexId } = parsed.data;
-      roomManager.handleAction(gameId, { type: 'MOVE_ROBBER', playerId, hexId }, socket);
-    });
+    // G. GAME ACTIONS: Intercepted and routed through ActionRegistry
+    const allGameEvents = [
+      CLIENT_EVENTS.ROLL_DICE,
+      CLIENT_EVENTS.BUILD_ROAD,
+      CLIENT_EVENTS.BUILD_SETTLEMENT,
+      CLIENT_EVENTS.BUILD_CITY,
+      CLIENT_EVENTS.MOVE_ROBBER,
+      CLIENT_EVENTS.DISCARD_RESOURCES,
+      CLIENT_EVENTS.STEAL_RESOURCE,
+      CLIENT_EVENTS.BUY_DEV_CARD,
+      CLIENT_EVENTS.PLAY_DEV_CARD,
+      CLIENT_EVENTS.TRADE_BANK,
+      CLIENT_EVENTS.TRADE_MARITIME,
+      CLIENT_EVENTS.TRADE_PROPOSE,
+      CLIENT_EVENTS.TRADE_ACCEPT,
+      CLIENT_EVENTS.TRADE_CANCEL,
+      CLIENT_EVENTS.END_TURN,
+    ];
 
-    // 7. Trade Bank
-    socket.on(CLIENT_EVENTS.TRADE_BANK, (data: unknown) => {
-      const parsed = tradeBankSchema.safeParse(data);
-      if (!parsed.success) return;
-      const { gameId, playerId, giving, receiving } = parsed.data;
-      roomManager.handleAction(gameId, { type: 'TRADE_BANK', playerId, giving, receiving }, socket);
-    });
+    for (const eventName of allGameEvents) {
+      socket.on(eventName, (payload: unknown) => {
+        // Rate limit check
+        if (!rateLimiter.checkActionLimit(socket.id)) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: 'RATE_LIMIT_EXCEEDED',
+            message: 'Too many game actions. Please slow down.',
+          });
+          return;
+        }
 
-    // 8. End Turn
-    socket.on(CLIENT_EVENTS.END_TURN, (data: unknown) => {
-      const parsed = endTurnSchema.safeParse(data);
-      if (!parsed.success) return;
-      const { gameId, playerId } = parsed.data;
-      roomManager.handleAction(gameId, { type: 'END_TURN', playerId }, socket);
-    });
+        actionRegistry.dispatch(eventName, payload, socket, roomManager, currentGameCode);
+      });
+    }
 
-    // 9. Chat
+    // H. CHAT
     socket.on(CLIENT_EVENTS.SEND_CHAT, (data: unknown) => {
+      if (!rateLimiter.checkChatLimit(socket.id)) {
+        socket.emit(SERVER_EVENTS.ERROR, {
+          code: 'RATE_LIMIT_EXCEEDED',
+          message: 'Chat message rate limit exceeded.',
+        });
+        return;
+      }
+
       const parsed = chatMessageSchema.safeParse(data);
       if (!parsed.success) return;
-      const { gameId, playerId, message } = parsed.data;
-      const game = roomManager.getGame(gameId);
-      const username = game?.players[playerId]?.username ?? 'Voyager';
-      io.to(`game:${gameId}`).emit(SERVER_EVENTS.CHAT_MESSAGE, {
-        playerId,
+
+      const { message, gameId } = parsed.data;
+      const targetRoom = gameId || currentGameCode;
+      if (!targetRoom) return;
+
+      io.to(`game:${targetRoom}`).emit(SERVER_EVENTS.CHAT_MESSAGE, {
+        playerId: userId,
         username,
         message,
         timestamp: Date.now(),
       });
     });
 
+    // I. DISCONNECT
     socket.on('disconnect', () => {
-      logger.info({ socketId: socket.id }, 'Socket client disconnected');
+      logger.info({ socketId: socket.id, userId }, 'Socket client disconnected');
+      rateLimiter.cleanup(socket.id);
+      if (currentGameCode) {
+        roomManager.handlePlayerDisconnect(socket.id, userId, currentGameCode);
+      }
     });
   });
 
-  return { io, roomManager };
+  return { io, roomManager, actionRegistry };
 }
