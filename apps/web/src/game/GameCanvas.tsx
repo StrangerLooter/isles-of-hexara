@@ -62,6 +62,13 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     }
   }, [cameraMode]);
 
+  // Sync robber move mode highlights
+  useEffect(() => {
+    if (!gameInstanceRef.current || !gameState) return;
+    const isRobberMove = gameState.phase === 'ROBBER_MOVE';
+    gameInstanceRef.current.setRobberMoveMode(isRobberMove, gameState.robberHexId);
+  }, [gameState?.phase, gameState?.robberHexId]);
+
   // Sync interactive 3D placement preview and glowing spot
   useEffect(() => {
     if (!gameInstanceRef.current || !gameState) return;

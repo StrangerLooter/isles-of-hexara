@@ -17,9 +17,11 @@ import { ResourceType } from '@hexara/shared';
 import confetti from 'canvas-confetti';
 import { io, Socket } from 'socket.io-client';
 import { BuildModal } from '../../components/game-ui/BuildModal';
+import { DiscardModal } from '../../components/game-ui/DiscardModal';
 import { GameHUD } from '../../components/game-ui/GameHUD';
 import { GameLogModal } from '../../components/game-ui/GameLogModal';
 import { RotateOverlay } from '../../components/game-ui/RotateOverlay';
+import { StealVictimModal } from '../../components/game-ui/StealVictimModal';
 import { TradeModal } from '../../components/game-ui/TradeModal';
 import { GameCanvas } from '../../game/GameCanvas';
 import { useGameStore } from '../../store/gameStore';
@@ -472,6 +474,25 @@ export default function GamePage() {
     dispatchAction({ type: 'TRADE_BANK', playerId: localPlayerId, giving, receiving });
   };
 
+  const handleDiscard = (resources: Record<ResourceType, number>) => {
+    dispatchAction({ type: 'DISCARD_RESOURCES', playerId: localPlayerId, resources });
+  };
+
+  const handleSteal = (victimId: string) => {
+    dispatchAction({ type: 'STEAL_RESOURCE', playerId: localPlayerId, victimId });
+  };
+
+  // Determine if local player needs to show discard modal
+  const localPendingDiscard = gameState?.pendingDiscards?.[localPlayerId] ?? 0;
+  const showDiscardModal =
+    gameState?.phase === 'ROBBER_DISCARD' && localPendingDiscard > 0;
+
+  // Determine if steal victim modal should show
+  const showStealModal =
+    gameState?.phase === 'ROBBER_STEAL' &&
+    gameState?.playerOrder[gameState.currentPlayerIndex] === localPlayerId &&
+    (gameState?.robberEligibleVictimIds?.length ?? 0) > 0;
+
   return (
     <main className="relative w-screen h-screen overflow-hidden bg-[#0d0705]">
       <RotateOverlay />
@@ -488,6 +509,25 @@ export default function GamePage() {
       <BuildModal />
       <TradeModal onBankTrade={handleBankTrade} />
       <GameLogModal />
+
+      {/* Phase 1: Robber — Discard dialog for local human player */}
+      {showDiscardModal && gameState && (
+        <DiscardModal
+          handCounts={gameState.players[localPlayerId]?.resources as Record<ResourceType, number>}
+          requiredDiscard={localPendingDiscard}
+          onConfirm={handleDiscard}
+        />
+      )}
+
+      {/* Phase 1: Robber — Steal victim selection for local human player */}
+      {showStealModal && gameState && (
+        <StealVictimModal
+          victimIds={gameState.robberEligibleVictimIds}
+          players={gameState.players}
+          activePlayerName={gameState.players[localPlayerId]?.username || 'You'}
+          onSteal={handleSteal}
+        />
+      )}
     </main>
   );
 }

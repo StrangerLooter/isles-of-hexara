@@ -126,8 +126,34 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const canTrade = isMyTurn && gameState.phase === 'MAIN';
   const canEndTurn =
     isMyTurn &&
-    (gameState.phase.startsWith('SETUP') ||
+    ((gameState.phase.startsWith('SETUP')) ||
       (gameState.phase === 'MAIN' && gameState.dice.rolled));
+
+  // Robber phase state helpers
+  const myPendingDiscard = gameState.pendingDiscards?.[localPlayerId] ?? 0;
+  const isRobberDiscard = gameState.phase === 'ROBBER_DISCARD' && myPendingDiscard > 0;
+  const isRobberMove = gameState.phase === 'ROBBER_MOVE' && isMyTurn;
+  const isRobberSteal = gameState.phase === 'ROBBER_STEAL' && isMyTurn;
+
+  // Phase instruction text
+  type SetupPhase = 'SETUP_ROUND_1' | 'SETUP_ROUND_2';
+  const getPhaseInstruction = (): string | null => {
+    if (!isMyTurn) return null;
+    const p = localPlayer;
+    if (!p) return null;
+    if (gameState.phase === 'SETUP_ROUND_1') {
+      if (p.settlementsRemaining === 5) return '🏠 Place your first Settlement';
+      if (p.roadsRemaining === 15) return '🛤️ Now place your first Road';
+    }
+    if (gameState.phase === 'SETUP_ROUND_2') {
+      if (p.settlementsRemaining === 4) return '🏠 Place your second Settlement';
+      if (p.roadsRemaining === 14) return '🛤️ Place your second Road — then gain resources';
+    }
+    if (gameState.phase === 'ROLLING') return '🎲 Roll the dice to begin your turn';
+    if (gameState.phase === 'MAIN') return '🏗️ Build, Trade, or End Turn';
+    return null;
+  };
+  const phaseInstruction = getPhaseInstruction();
 
   const handleLeaveMatch = () => {
     if (confirm('Are you sure you want to return to the Main Menu?')) {
@@ -277,6 +303,36 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               >
                 Cancel
               </button>
+            </div>
+          )}
+
+          {/* Phase-specific instruction ribbon */}
+          {buildMode === 'none' && phaseInstruction && (
+            <div className="pointer-events-none px-6 py-1.5 rounded-xl border border-amber-500/40 bg-black/60 backdrop-blur-md flex items-center gap-2 shadow-lg">
+              <span className="text-xs font-bold text-amber-200">{phaseInstruction}</span>
+            </div>
+          )}
+
+          {/* ROBBER DISCARD Banner */}
+          {isRobberDiscard && (
+            <div className="pointer-events-none px-6 py-2 rounded-xl border-2 border-red-500 bg-red-950/90 backdrop-blur-md flex items-center gap-2 shadow-[0_0_20px_rgba(220,38,38,0.7)] animate-pulse">
+              <span className="text-sm font-black text-red-200">⚠️ Discard {myPendingDiscard} card{myPendingDiscard !== 1 ? 's' : ''} — check the discard dialog</span>
+            </div>
+          )}
+
+          {/* ROBBER MOVE Banner */}
+          {isRobberMove && buildMode === 'none' && (
+            <div className="pointer-events-none px-6 py-2.5 rounded-xl border-2 border-amber-500 bg-amber-950/90 backdrop-blur-md flex items-center gap-2.5 shadow-[0_0_20px_rgba(245,158,11,0.7)] animate-pulse">
+              <span className="text-lg">🔴</span>
+              <span className="text-sm font-black text-amber-200">Move the Robber — Click a highlighted hex</span>
+            </div>
+          )}
+
+          {/* ROBBER STEAL Banner */}
+          {isRobberSteal && (
+            <div className="pointer-events-none px-6 py-2 rounded-xl border-2 border-purple-500 bg-purple-950/90 backdrop-blur-md flex items-center gap-2 shadow-[0_0_20px_rgba(147,51,234,0.7)] animate-pulse">
+              <span className="text-lg">💀</span>
+              <span className="text-sm font-black text-purple-200">Choose a player to steal from</span>
             </div>
           )}
 

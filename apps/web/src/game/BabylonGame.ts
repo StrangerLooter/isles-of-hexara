@@ -57,6 +57,7 @@ export class BabylonGame {
   private candleLight: HemisphericLight | null = null;
   private previewPieceMesh: Mesh | null = null;
   private previewSpotMesh: Mesh | null = null;
+  private robberHighlightMeshes: Mesh[] = [];
 
   // Materials caching
   private terrainMaterials = new Map<string, StandardMaterial>();
@@ -64,6 +65,7 @@ export class BabylonGame {
   private lastBoardHash = '';
 
   private currentCameraMode: CameraViewMode = 'perspective';
+  private currentPlacementMode: 'none' | 'road' | 'settlement' | 'city' = 'none';
 
   constructor(canvas: HTMLCanvasElement, callbacks: BabylonCallbacks = {}) {
     this.canvas = canvas;
@@ -1183,8 +1185,6 @@ export class BabylonGame {
     }
   }
 
-  private currentPlacementMode: 'none' | 'road' | 'settlement' | 'city' = 'none';
-
   /**
    * Clears any active interactive placement preview mesh and highlight spot.
    */
@@ -1339,10 +1339,59 @@ export class BabylonGame {
     this.setCameraMode('perspective');
   }
 
+  /**
+   * Highlights all valid robber destination hexes with a pulsing amber overlay disk
+   * when the game phase is ROBBER_MOVE. Clears them when called with active=false.
+   * Valid targets: any non-desert hex that is NOT the current robber location.
+   */
+  public setRobberMoveMode(active: boolean, robberHexId?: string): void {
+    // Clear old highlights first
+    this.robberHighlightMeshes.forEach((m) => m.dispose());
+    this.robberHighlightMeshes = [];
+
+    if (!active) return;
+
+    const highlightMat = new StandardMaterial('robberHighlightMat', this.scene);
+    highlightMat.diffuseColor = new Color3(1.0, 0.6, 0.0);
+    highlightMat.emissiveColor = new Color3(0.9, 0.35, 0.0);
+    highlightMat.alpha = 0.55;
+
+    this.hexTopMeshes.forEach((topMesh, hexId) => {
+      // Skip the current robber hex
+      if (robberHexId && hexId === robberHexId) return;
+
+      const pos = topMesh.position;
+      const disc = MeshBuilder.CreateCylinder(
+        `robberHL_${hexId}`,
+        { diameter: 3.7, height: 0.04, tessellation: 6 },
+        this.scene
+      );
+      disc.position = new Vector3(pos.x, 0.70, pos.z);
+      disc.rotation.y = Math.PI / 6;
+      disc.material = highlightMat;
+
+      // Simple pulsing via scene observer
+      let tick = 0;
+      this.scene.onBeforeRenderObservable.addOnce(() => {});
+      const obs = this.scene.onBeforeRenderObservable.add(() => {
+        tick += 0.04;
+        if (disc && !disc.isDisposed()) {
+          disc.visibility = 0.35 + 0.35 * Math.sin(tick);
+        } else {
+          this.scene.onBeforeRenderObservable.remove(obs);
+        }
+      });
+
+      this.robberHighlightMeshes.push(disc);
+    });
+  }
+
   public dispose(): void {
     window.removeEventListener('resize', this.handleResize);
     this.clearPlacementPreview();
     this.clearBoard();
+    this.robberHighlightMeshes.forEach((m) => m.dispose());
+    this.robberHighlightMeshes = [];
     this.terrainMaterials.forEach((mat) => mat.dispose());
     this.terrainMaterials.clear();
     if (this.blockSideMaterial) {
