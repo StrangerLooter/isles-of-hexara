@@ -24,12 +24,15 @@ import { PlayerRibbonCard } from './PlayerRibbonCard';
 import { DiceDisplay } from './DiceDisplay';
 import { LeftToolbar } from './LeftToolbar';
 import { FullscreenButton } from '../common/FullscreenButton';
+import { DevCardPanel, DevCardParams } from './DevCardPanel';
+import { TurnTimer } from './TurnTimer';
 
 interface GameHUDProps {
   onRollDice?: () => void;
   onEndTurn?: () => void;
   onResetCamera?: () => void;
   onConfirmPlacement?: () => void;
+  onPlayDevCard?: (card: string, params?: DevCardParams) => void;
 }
 
 export const GameHUD: React.FC<GameHUDProps> = ({
@@ -37,6 +40,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onEndTurn,
   onResetCamera,
   onConfirmPlacement,
+  onPlayDevCard,
 }) => {
   const {
     gameState,
@@ -56,6 +60,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const [isChatLogOpen, setChatLogOpen] = useState(false);
   const [isAlmanacOpen, setAlmanacOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
+  const [isDevCardPanelOpen, setDevCardPanelOpen] = useState(false);
 
   // Match Info from sessionStorage
   const scenarioName = typeof window !== 'undefined' ? sessionStorage.getItem('hexara_scenario_name') || 'The First Island' : 'The First Island';
@@ -233,6 +238,17 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               Goal: {vpTarget} VP Target
             </span>
           </div>
+
+          {/* Turn Timer */}
+          <TurnTimer
+            isActive={gameState.phase === 'MAIN' || gameState.phase === 'ROLLING'}
+            isMyTurn={isMyTurn}
+            turnKey={`${gameState.currentPlayerIndex}_${gameState.turnNumber}`}
+            onTimeout={() => {
+              if (canRoll) onRollDice?.();
+              else if (canEndTurn) onEndTurn?.();
+            }}
+          />
 
           {/* Fullscreen App Mode Toggle */}
           <FullscreenButton />
@@ -513,6 +529,24 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   <Ship className="w-6 h-6 stroke-[2.5]" />
                 </button>
 
+                {/* Dev Cards Button */}
+                <button
+                  onClick={() => setDevCardPanelOpen(true)}
+                  className={`relative w-11 h-11 md:w-12 md:h-12 rounded-xl flex items-center justify-center shadow-xl border-2 transition-all ${
+                    (localPlayer?.devCards?.length ?? 0) > 0
+                      ? 'bg-gradient-to-b from-[#7c3aed] to-[#5b21b6] border-purple-300 text-purple-100 hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_4px_12px_rgba(147,51,234,0.5)]'
+                      : 'bg-[#241710] border-amber-900/40 text-amber-200/30 hover:border-amber-700/50 cursor-pointer'
+                  }`}
+                  title={`Development Cards (${localPlayer?.devCards?.length ?? 0} in hand)`}
+                >
+                  <Scroll className="w-5 h-5 stroke-[2.5]" />
+                  {(localPlayer?.devCards?.length ?? 0) > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 text-white text-[10px] font-black flex items-center justify-center shadow-md border border-white/40">
+                      {localPlayer?.devCards?.length}
+                    </span>
+                  )}
+                </button>
+
                 {/* End Turn Action Button */}
                 <button
                   onClick={canRoll ? onRollDice : onEndTurn}
@@ -569,6 +603,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         onClose={() => setSettingsOpen(false)}
         settings={settings}
         onUpdateSettings={setSettings}
+      />
+
+      <DevCardPanel
+        isOpen={isDevCardPanelOpen}
+        onClose={() => setDevCardPanelOpen(false)}
+        devCards={localPlayer?.devCards || []}
+        canPlay={isMyTurn && gameState.phase === 'MAIN'}
+        onPlay={(card, params) => {
+          onPlayDevCard?.(card, params);
+        }}
       />
     </div>
   );

@@ -16,13 +16,17 @@ import {
 import { ResourceType } from '@hexara/shared';
 import confetti from 'canvas-confetti';
 import { io, Socket } from 'socket.io-client';
+import { ToastNotification } from '../../components/common/ToastNotification';
 import { BuildModal } from '../../components/game-ui/BuildModal';
+import { DevCardParams } from '../../components/game-ui/DevCardPanel';
 import { DiscardModal } from '../../components/game-ui/DiscardModal';
 import { GameHUD } from '../../components/game-ui/GameHUD';
 import { GameLogModal } from '../../components/game-ui/GameLogModal';
 import { RotateOverlay } from '../../components/game-ui/RotateOverlay';
 import { StealVictimModal } from '../../components/game-ui/StealVictimModal';
 import { TradeModal } from '../../components/game-ui/TradeModal';
+import { TradeOfferNotification } from '../../components/game-ui/TradeOfferNotification';
+import { VictoryScreen } from '../../components/game-ui/VictoryScreen';
 import { GameCanvas } from '../../game/GameCanvas';
 import { useGameStore } from '../../store/gameStore';
 
@@ -38,6 +42,7 @@ export default function GamePage() {
     setSelectedVertexId,
     selectedEdgeId,
     setSelectedEdgeId,
+    errorToast,
     setErrorToast,
   } = useGameStore();
 
@@ -72,7 +77,6 @@ export default function GamePage() {
 
   // Initialize Connection or Local Game
   useEffect(() => {
-    // Read player preferences from sessionStorage
     const storedCount = Number(sessionStorage.getItem('hexara_player_count') || '4');
     const storedMode = sessionStorage.getItem('hexara_match_mode') || 'solo';
     const storedScenarioId = sessionStorage.getItem('hexara_scenario_id') || 'first_island';
@@ -80,7 +84,6 @@ export default function GamePage() {
     const storedVp = Number(sessionStorage.getItem('hexara_vp_target') || '10');
     const storedSeed = Number(sessionStorage.getItem('hexara_board_seed') || '123456');
 
-    // 1. Initialize clean game state with configured options
     if (!useGameStore.getState().gameState) {
       const playerList = [
         { id: localPlayerId, username: 'Captain Amber' },
@@ -153,6 +156,44 @@ export default function GamePage() {
   useEffect(() => {
     if (!gameState || isOnlineConnected || gameState.phase === 'FINISHED') return;
 
+    // AI Response to Human Trade Offers in Solo Mode
+    if (gameState.activeTrade && gameState.activeTrade.fromPlayerId === localPlayerId) {
+      const aiTradeTimer = setTimeout(() => {
+        // Find an AI player who holds the requested resources
+        const willingAiId = gameState.playerOrder.find((pId) => {
+          if (pId === localPlayerId) return false;
+          const aiP = gameState.players[pId];
+          if (!aiP || !aiP.isAi) return false;
+          for (const [res, count] of Object.entries(gameState.activeTrade!.request) as [ResourceType, number][]) {
+            if ((aiP.resources[res] ?? 0) < (count ?? 0)) return false;
+          }
+          return true;
+        });
+
+        if (willingAiId) {
+          const acceptRes = executeGameAction(gameState, {
+            type: 'TRADE_ACCEPT',
+            playerId: willingAiId,
+          });
+          if (acceptRes.success) {
+            setGameState(acceptRes.newState);
+            return;
+          }
+        } else {
+          // If no AI can fulfill trade, cancel with feedback
+          const cancelRes = executeGameAction(gameState, {
+            type: 'TRADE_CANCEL',
+            playerId: localPlayerId,
+          });
+          if (cancelRes.success) {
+            setGameState(cancelRes.newState);
+          }
+        }
+      }, 1500);
+
+      return () => clearTimeout(aiTradeTimer);
+    }
+
     const activePlayerId = gameState.playerOrder[gameState.currentPlayerIndex];
     const activePlayer = gameState.players[activePlayerId];
 
@@ -162,10 +203,8 @@ export default function GamePage() {
       // 1. Setup Phase for AI (Setup Round 1 & 2)
       if (gameState.phase.startsWith('SETUP')) {
         const vertices = Object.values(gameState.board.vertices) as BoardVertex[];
-        // Find valid unoccupied vertex obeying distance rule
         const validVertex = vertices.find((v) => {
           if (v.building) return false;
-          // Check all adjacent vertices are empty (Distance Rule)
           return v.adjacentVertexIds.every((adjId) => !gameState.board.vertices[adjId]?.building);
         });
 
@@ -237,7 +276,6 @@ export default function GamePage() {
       // 4. Robber Move Phase for AI
       if (gameState.phase === 'ROBBER_MOVE') {
         const hexes = Object.values(gameState.board.hexes);
-        // Prioritize hex with highest producing number (6 or 8) that has opponent buildings
         const targetHex =
           hexes.find((h) => {
             if (h.id === gameState.robberHexId || h.terrain === 'desert') return false;
@@ -332,7 +370,7 @@ export default function GamePage() {
     }, 700);
 
     return () => clearTimeout(aiTimer);
-  }, [gameState, isOnlineConnected]);
+  }, [gameState, isOnlineConnected, localPlayerId]);
 
   const dispatchAction = (action: any) => {
     if (socketRef.current && isOnlineConnected) {
@@ -474,12 +512,72 @@ export default function GamePage() {
     dispatchAction({ type: 'TRADE_BANK', playerId: localPlayerId, giving, receiving });
   };
 
+  const handleProposeTrade = (
+    offer: Partial<Record<ResourceType, number>>,
+    request: Partial<Record<ResourceType, number>>
+  ) => {
+    dispatchAction({ type: 'TRADE_PROPOSE', playerId: localPlayerId, offer, request });
+  };
+
+  const handleCancelTrade = () => {
+    dispatchAction({ type: 'TRADE_CANCEL', playerId: localPlayerId });
+  };
+
+  const handleAcceptTrade = () => {
+    dispatchAction({ type: 'TRADE_ACCEPT', playerId: localPlayerId });
+  };
+
+  const handleDeclineTrade = () => {
+    dispatchAction({ type: 'TRADE_CANCEL', playerId: localPlayerId });
+  };
+
+  const handlePlayDevCard = (card: string, params?: DevCardParams) => {
+    dispatchAction({
+      type: 'PLAY_DEV_CARD',
+      playerId: localPlayerId,
+      card,
+      params,
+    });
+    if (card === 'road_building') {
+      setBuildMode('road');
+    }
+  };
+
   const handleDiscard = (resources: Record<ResourceType, number>) => {
     dispatchAction({ type: 'DISCARD_RESOURCES', playerId: localPlayerId, resources });
   };
 
   const handleSteal = (victimId: string) => {
     dispatchAction({ type: 'STEAL_RESOURCE', playerId: localPlayerId, victimId });
+  };
+
+  const handlePlayAgain = () => {
+    const storedCount = Number(sessionStorage.getItem('hexara_player_count') || '4');
+    const storedScenarioId = sessionStorage.getItem('hexara_scenario_id') || 'first_island';
+    const storedScenarioName = sessionStorage.getItem('hexara_scenario_name') || 'The First Island';
+    const storedVp = Number(sessionStorage.getItem('hexara_vp_target') || '10');
+    const storedSeed = Date.now();
+
+    const playerList = [
+      { id: localPlayerId, username: 'Captain Amber' },
+      { id: 'ai_1', username: 'Candamir (Bot)', isAi: true },
+      { id: 'ai_2', username: 'Louis (Bot)', isAi: true },
+    ];
+    if (storedCount === 4) {
+      playerList.push({ id: 'ai_3', username: 'William (Bot)', isAi: true });
+    }
+
+    const newGame = createInitialGameState(
+      'hexara_' + Date.now(),
+      playerList,
+      storedSeed,
+      {
+        targetVictoryPoints: storedVp,
+        scenarioId: storedScenarioId,
+        scenarioName: storedScenarioName,
+      }
+    );
+    setGameState(newGame);
   };
 
   // Determine if local player needs to show discard modal
@@ -505,12 +603,31 @@ export default function GamePage() {
         onRollDice={handleRollDice}
         onEndTurn={handleEndTurn}
         onConfirmPlacement={handleConfirmPlacement}
+        onPlayDevCard={handlePlayDevCard}
       />
       <BuildModal />
-      <TradeModal onBankTrade={handleBankTrade} />
+      <TradeModal
+        onBankTrade={handleBankTrade}
+        onProposeTrade={handleProposeTrade}
+        onCancelTrade={handleCancelTrade}
+      />
       <GameLogModal />
 
-      {/* Phase 1: Robber — Discard dialog for local human player */}
+      {/* Global Toast System */}
+      <ToastNotification logs={gameState?.logs || []} errorToast={errorToast} />
+
+      {/* Incoming Trade Offer from Opponent */}
+      {gameState?.activeTrade && (
+        <TradeOfferNotification
+          activeTrade={gameState.activeTrade}
+          players={gameState.players}
+          localPlayerId={localPlayerId}
+          onAccept={handleAcceptTrade}
+          onDecline={handleDeclineTrade}
+        />
+      )}
+
+      {/* Robber: Discard dialog for local human player */}
       {showDiscardModal && gameState && (
         <DiscardModal
           handCounts={gameState.players[localPlayerId]?.resources as Record<ResourceType, number>}
@@ -519,13 +636,22 @@ export default function GamePage() {
         />
       )}
 
-      {/* Phase 1: Robber — Steal victim selection for local human player */}
+      {/* Robber: Steal victim selection for local human player */}
       {showStealModal && gameState && (
         <StealVictimModal
           victimIds={gameState.robberEligibleVictimIds}
           players={gameState.players}
           activePlayerName={gameState.players[localPlayerId]?.username || 'You'}
           onSteal={handleSteal}
+        />
+      )}
+
+      {/* Game Victory Endgame Screen */}
+      {gameState && gameState.phase === 'FINISHED' && (
+        <VictoryScreen
+          gameState={gameState}
+          localPlayerId={localPlayerId}
+          onPlayAgain={handlePlayAgain}
         />
       )}
     </main>

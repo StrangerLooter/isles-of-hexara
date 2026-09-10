@@ -613,6 +613,26 @@ export function executeGameAction(
       } else if (action.card === 'victory_point') {
         recalculateAllVictoryPoints(next);
         next.logs.push(`${player.username} revealed a Victory Point card!`);
+      } else if (action.card === 'road_building') {
+        if (action.params?.roadBuildingEdges && action.params.roadBuildingEdges.length > 0) {
+          for (const edgeId of action.params.roadBuildingEdges) {
+            const edge = next.board.edges[edgeId];
+            if (edge && !edge.road && player.roadsRemaining > 0) {
+              edge.road = { playerId: action.playerId };
+              player.roadsRemaining -= 1;
+            }
+          }
+          const lrResult = evaluateLongestRoad(next.board, next.playerOrder, next.longestRoadOwnerId);
+          next.longestRoadOwnerId = lrResult.newOwnerId;
+          next.longestRoadLength = lrResult.playerLengths[lrResult.newOwnerId ?? ''] || 0;
+          recalculateAllVictoryPoints(next);
+        } else {
+          // Grant resources for 2 free roads
+          player.resources.lumber = (player.resources.lumber ?? 0) + 2;
+          player.resources.brick = (player.resources.brick ?? 0) + 2;
+        }
+
+        next.logs.push(`${player.username} played Road Building!`);
       }
 
       return { success: true, newState: next };
@@ -642,6 +662,80 @@ export function executeGameAction(
 
       return { success: true, newState: next };
     }
+
+    case 'TRADE_PROPOSE': {
+      if (action.playerId !== activePlayerId) {
+        return { success: false, newState: state, error: 'Only active player can propose trades' };
+      }
+      const player = next.players[action.playerId];
+      if (!player) return { success: false, newState: state, error: 'Player does not exist' };
+
+      for (const [res, count] of Object.entries(action.offer) as [ResourceType, number][]) {
+        if ((player.resources[res] ?? 0) < (count ?? 0)) {
+          return { success: false, newState: state, error: `You do not have enough ${res} to offer` };
+        }
+      }
+
+      next.activeTrade = {
+        id: 'trade_' + Date.now(),
+        fromPlayerId: action.playerId,
+        offer: action.offer,
+        request: action.request,
+        acceptedBy: [],
+      };
+
+      next.logs.push(`${player.username} proposed a trade offer.`);
+      return { success: true, newState: next };
+    }
+
+    case 'TRADE_ACCEPT': {
+      if (!next.activeTrade) {
+        return { success: false, newState: state, error: 'No active trade offer' };
+      }
+
+      if (action.playerId === next.activeTrade.fromPlayerId) {
+        return { success: false, newState: state, error: 'Cannot accept your own trade' };
+      }
+
+      const acceptingPlayer = next.players[action.playerId];
+      const fromPlayer = next.players[next.activeTrade.fromPlayerId];
+      if (!acceptingPlayer || !fromPlayer) {
+        return { success: false, newState: state, error: 'Player does not exist' };
+      }
+
+      for (const [res, count] of Object.entries(next.activeTrade.request) as [ResourceType, number][]) {
+        if ((acceptingPlayer.resources[res] ?? 0) < (count ?? 0)) {
+          return { success: false, newState: state, error: `You do not have the requested ${res}` };
+        }
+      }
+
+      for (const [res, count] of Object.entries(next.activeTrade.offer) as [ResourceType, number][]) {
+        if ((fromPlayer.resources[res] ?? 0) < (count ?? 0)) {
+          return { success: false, newState: state, error: `${fromPlayer.username} no longer has the offered ${res}` };
+        }
+      }
+
+      for (const [res, count] of Object.entries(next.activeTrade.offer) as [ResourceType, number][]) {
+        fromPlayer.resources[res] -= count;
+        acceptingPlayer.resources[res] = (acceptingPlayer.resources[res] ?? 0) + count;
+      }
+
+      for (const [res, count] of Object.entries(next.activeTrade.request) as [ResourceType, number][]) {
+        acceptingPlayer.resources[res] -= count;
+        fromPlayer.resources[res] = (fromPlayer.resources[res] ?? 0) + count;
+      }
+
+      next.activeTrade = null;
+      next.logs.push(`${acceptingPlayer.username} accepted trade from ${fromPlayer.username}.`);
+      return { success: true, newState: next };
+    }
+
+    case 'TRADE_CANCEL': {
+      next.activeTrade = null;
+      next.logs.push('Trade offer cancelled.');
+      return { success: true, newState: next };
+    }
+
 
     case 'END_TURN': {
       if (action.playerId !== activePlayerId) {

@@ -113,7 +113,24 @@ export const PlayerRibbonCard: React.FC<PlayerRibbonCardProps> = ({
               🂡{totalDevCards}
             </span>
           </div>
+
+          {/* Longest Road / Largest Army Special Honors */}
+          {(player.longestRoad || player.largestArmy) && (
+            <div className="flex items-center gap-1 mt-1">
+              {player.longestRoad && (
+                <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-400 text-black border border-amber-200 shadow-sm animate-pulse">
+                  🛤️ Longest Road
+                </span>
+              )}
+              {player.largestArmy && (
+                <span className="text-[8px] font-black uppercase px-1.5 py-0.5 rounded bg-red-500 text-white border border-red-300 shadow-sm animate-pulse">
+                  ⚔️ Largest Army
+                </span>
+              )}
+            </div>
+          )}
         </div>
+
       </div>
     </div>
   );

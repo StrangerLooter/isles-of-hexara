@@ -162,4 +162,19 @@ export type GameAction =
       playerId: string;
       giving: ResourceType;
       receiving: ResourceType;
+    }
+  | {
+      type: 'TRADE_PROPOSE';
+      playerId: string;
+      offer: Partial<ResourceInventory>;
+      request: Partial<ResourceInventory>;
+    }
+  | {
+      type: 'TRADE_ACCEPT';
+      playerId: string;
+    }
+  | {
+      type: 'TRADE_CANCEL';
+      playerId: string;
     };
+
