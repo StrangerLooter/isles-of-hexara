@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Compass,
   MessageSquare,
@@ -38,8 +38,22 @@ export default function HomePage() {
 
   // Mode selection state
   const [lobbyMode, setLobbyMode] = useState<'solo' | 'online'>('solo');
+  const [initialRoomCode, setInitialRoomCode] = useState<string>('');
   const [coins, setCoins] = useState(1250);
   const [scrolls, setScrolls] = useState(18);
+
+  // Check for URL parameters (?room=XYZ or ?code=XYZ)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+    const codeParam = urlParams.get('room') || urlParams.get('code') || hashParams.get('room') || hashParams.get('code');
+    if (codeParam) {
+      setLobbyMode('online');
+      setInitialRoomCode(codeParam.toUpperCase());
+      setScenarioOpen(true);
+    }
+  }, []);
 
   const handleLaunchGame = (options: {
     scenarioId: string;
@@ -53,6 +67,7 @@ export default function HomePage() {
     balancedDice: boolean;
     randomMapTopology: boolean;
     boardSeed: number;
+    roomCode?: string;
   }) => {
     // Store match preferences in sessionStorage for GameHUD and BabylonGame
     sessionStorage.setItem('hexara_scenario_id', options.scenarioId);
@@ -65,6 +80,9 @@ export default function HomePage() {
     sessionStorage.setItem('hexara_balanced_dice', String(options.balancedDice));
     sessionStorage.setItem('hexara_board_seed', String(options.boardSeed));
     sessionStorage.setItem('hexara_random_topology', String(options.randomMapTopology));
+    if (options.roomCode) {
+      sessionStorage.setItem('hexara_room_code', options.roomCode);
+    }
     
     // Clear any previous game state to ensure clean start
     sessionStorage.removeItem('hexara_active_game_state');
@@ -334,6 +352,8 @@ export default function HomePage() {
         isOpen={isScenarioOpen}
         onClose={() => setScenarioOpen(false)}
         onLaunchGame={handleLaunchGame}
+        initialMode={lobbyMode}
+        initialRoomCode={initialRoomCode}
       />
     </main>
   );

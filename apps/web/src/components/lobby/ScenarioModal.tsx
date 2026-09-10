@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Lock,
   Play,
@@ -15,6 +15,11 @@ import {
   Dices,
   Sliders,
   Flame,
+  Copy,
+  CheckCircle2,
+  Link2,
+  Globe,
+  Radio,
 } from 'lucide-react';
 import { HeaderBar } from '../modals/HeaderBar';
 
@@ -28,6 +33,15 @@ export interface ScenarioItem {
   price?: string;
   imageBg: string;
   rules: string[];
+}
+
+const ROOM_CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+function generateRandomRoomCode(): string {
+  let result = '';
+  for (let i = 0; i < 6; i++) {
+    result += ROOM_CODE_CHARS.charAt(Math.floor(Math.random() * ROOM_CODE_CHARS.length));
+  }
+  return result;
 }
 
 export const CAMPAIGN_SCENARIOS: ScenarioItem[] = [
@@ -110,21 +124,32 @@ export interface PreMatchLaunchOptions {
   balancedDice: boolean;
   randomMapTopology: boolean;
   boardSeed: number;
+  roomCode?: string;
 }
 
 interface ScenarioModalProps {
   isOpen: boolean;
   onClose: () => void;
   onLaunchGame: (options: PreMatchLaunchOptions) => void;
+  initialMode?: 'solo' | 'online';
+  initialRoomCode?: string;
 }
 
 export const ScenarioModal: React.FC<ScenarioModalProps> = ({
   isOpen,
   onClose,
   onLaunchGame,
+  initialMode = 'solo',
+  initialRoomCode,
 }) => {
   const [selectedScenarioId, setSelectedScenarioId] = useState<string>('first_island');
-  const [gameMode, setGameMode] = useState<'solo' | 'online'>('solo');
+  const [gameMode, setGameMode] = useState<'solo' | 'online'>(initialMode);
+  const [onlineSubMode, setOnlineSubMode] = useState<'create' | 'join'>('create');
+  const [createdRoomCode, setCreatedRoomCode] = useState<string>(() => generateRandomRoomCode());
+  const [joinRoomCodeInput, setJoinRoomCodeInput] = useState<string>(initialRoomCode || '');
+  const [copiedCode, setCopiedCode] = useState<boolean>(false);
+  const [copiedLink, setCopiedLink] = useState<boolean>(false);
+
   const [playerCount, setPlayerCount] = useState<number>(4);
   const [aiDifficulty, setAiDifficulty] = useState<'NOVICE' | 'EXPERT' | 'MASTER'>('MASTER');
   const [vpTarget, setVpTarget] = useState<number>(10);
@@ -134,6 +159,15 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
   const [randomMapTopology, setRandomMapTopology] = useState<boolean>(true);
   const [boardSeed, setBoardSeed] = useState<number>(() => Math.floor(100000 + Math.random() * 900000));
   const [isShuffling, setIsShuffling] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (initialMode) setGameMode(initialMode);
+    if (initialRoomCode) {
+      setGameMode('online');
+      setOnlineSubMode('join');
+      setJoinRoomCodeInput(initialRoomCode.toUpperCase());
+    }
+  }, [initialMode, initialRoomCode, isOpen]);
 
   if (!isOpen) return null;
 
@@ -149,7 +183,32 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
     }, 400);
   };
 
+  const handleRegenerateRoomCode = () => {
+    setCreatedRoomCode(generateRandomRoomCode());
+  };
+
+  const handleCopyRoomCode = (codeToCopy: string) => {
+    navigator.clipboard.writeText(codeToCopy);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
+  };
+
+  const handleCopyInviteLink = (codeToCopy: string) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const inviteUrl = `${origin}/#/game?code=${codeToCopy}`;
+    navigator.clipboard.writeText(inviteUrl);
+    setCopiedLink(true);
+    setTimeout(() => setCopiedLink(false), 2000);
+  };
+
   const handleLaunch = () => {
+    const activeRoomCode =
+      gameMode === 'online'
+        ? onlineSubMode === 'join'
+          ? joinRoomCodeInput.trim().toUpperCase() || 'HEXARA'
+          : createdRoomCode
+        : undefined;
+
     onLaunchGame({
       scenarioId: currentScenario.id,
       scenarioName: currentScenario.name,
@@ -162,6 +221,7 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
       balancedDice,
       randomMapTopology,
       boardSeed,
+      roomCode: activeRoomCode,
     });
   };
 
@@ -381,6 +441,136 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Online Room Code & Invite Panel */}
+              {gameMode === 'online' && (
+                <div className="bg-gradient-to-br from-blue-950/60 via-[#101e2b] to-black/80 p-4 rounded-xl border-2 border-blue-500/50 shadow-xl space-y-3">
+                  <div className="flex items-center justify-between border-b border-blue-500/30 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-blue-400" />
+                      <span className="text-xs font-black uppercase text-blue-200 tracking-wider">
+                        Online Matchmaking & Friends Room
+                      </span>
+                    </div>
+                    {/* Submode Switcher */}
+                    <div className="flex bg-black/50 p-0.5 rounded-lg border border-blue-500/30">
+                      <button
+                        onClick={() => setOnlineSubMode('create')}
+                        className={`px-3 py-1 rounded text-[11px] font-bold transition-all ${
+                          onlineSubMode === 'create'
+                            ? 'bg-blue-600 text-white shadow'
+                            : 'text-blue-300/70 hover:text-blue-100'
+                        }`}
+                      >
+                        Create Room
+                      </button>
+                      <button
+                        onClick={() => setOnlineSubMode('join')}
+                        className={`px-3 py-1 rounded text-[11px] font-bold transition-all ${
+                          onlineSubMode === 'join'
+                            ? 'bg-blue-600 text-white shadow'
+                            : 'text-blue-300/70 hover:text-blue-100'
+                        }`}
+                      >
+                        Join with Code
+                      </button>
+                    </div>
+                  </div>
+
+                  {onlineSubMode === 'create' ? (
+                    <div className="space-y-3">
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-black/40 p-3 rounded-lg border border-blue-500/30">
+                        <div>
+                          <span className="text-[10px] uppercase font-mono text-blue-300 font-bold block">
+                            Your 6-Character Room Code
+                          </span>
+                          <span className="text-2xl font-black font-mono tracking-widest text-amber-300 drop-shadow-[0_0_8px_rgba(245,158,11,0.5)]">
+                            {createdRoomCode}
+                          </span>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <button
+                            onClick={() => handleCopyRoomCode(createdRoomCode)}
+                            className="flex-1 sm:flex-initial px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow transition-all active:scale-95"
+                            title="Copy Room Code to share with friends"
+                          >
+                            {copiedCode ? (
+                              <>
+                                <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                                <span className="text-emerald-200">Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-4 h-4" />
+                                <span>Copy Code</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={() => handleCopyInviteLink(createdRoomCode)}
+                            className="flex-1 sm:flex-initial px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow transition-all active:scale-95"
+                            title="Copy Direct Invite Link"
+                          >
+                            {copiedLink ? (
+                              <>
+                                <CheckCircle2 className="w-4 h-4 text-emerald-300" />
+                                <span className="text-emerald-200">Link Copied!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Link2 className="w-4 h-4" />
+                                <span>Invite Link</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            onClick={handleRegenerateRoomCode}
+                            className="p-2 rounded-lg bg-black/40 hover:bg-black/60 text-blue-300 border border-blue-500/30 transition-all"
+                            title="Generate another room code"
+                          >
+                            <Shuffle className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-blue-200/70 leading-relaxed">
+                        Share this 6-letter room code or invite link with your friends. When they enter the room code on their screen, they will join your live game!
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <label className="text-[11px] font-bold text-blue-200 block">
+                        Enter Friend's 6-Character Room Code:
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          maxLength={8}
+                          value={joinRoomCodeInput}
+                          onChange={(e) => setJoinRoomCodeInput(e.target.value.toUpperCase())}
+                          placeholder="e.g. 7KK8RU"
+                          className="flex-1 bg-black/60 border-2 border-blue-400/60 rounded-xl px-4 py-2 font-mono text-lg font-black text-amber-300 tracking-widest uppercase focus:outline-none focus:border-amber-400 placeholder:text-gray-600"
+                        />
+                        {joinRoomCodeInput && (
+                          <button
+                            onClick={() => handleCopyRoomCode(joinRoomCodeInput)}
+                            className="px-3 py-2 rounded-xl bg-blue-600/60 hover:bg-blue-500 text-white text-xs font-bold flex items-center gap-1 border border-blue-400/40"
+                            title="Copy code"
+                          >
+                            {copiedCode ? <CheckCircle2 className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-blue-200/70">
+                        Paste or type the 6-character room code given to you by your game host.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Victory Points Slider */}
               <div className="bg-black/30 p-3.5 rounded-xl border border-amber-600/20">

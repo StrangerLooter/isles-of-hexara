@@ -77,14 +77,29 @@ export default function GamePage() {
 
   // Initialize Connection or Local Game
   useEffect(() => {
+    let storedMode = sessionStorage.getItem('hexara_match_mode') || 'solo';
+    let roomCode = sessionStorage.getItem('hexara_room_code') || '';
+
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.split('?')[1] || '');
+      const codeFromUrl = urlParams.get('room') || urlParams.get('code') || hashParams.get('room') || hashParams.get('code');
+      if (codeFromUrl) {
+        roomCode = codeFromUrl.toUpperCase();
+        storedMode = 'online';
+        sessionStorage.setItem('hexara_room_code', roomCode);
+        sessionStorage.setItem('hexara_match_mode', 'online');
+      }
+    }
+    if (!roomCode) roomCode = 'HEXARA';
+
     const storedCount = Number(sessionStorage.getItem('hexara_player_count') || '4');
-    const storedMode = sessionStorage.getItem('hexara_match_mode') || 'solo';
     const storedScenarioId = sessionStorage.getItem('hexara_scenario_id') || 'first_island';
     const storedScenarioName = sessionStorage.getItem('hexara_scenario_name') || 'The First Island';
     const storedVp = Number(sessionStorage.getItem('hexara_vp_target') || '10');
     const storedSeed = Number(sessionStorage.getItem('hexara_board_seed') || '123456');
 
-    if (!useGameStore.getState().gameState) {
+    if (!useGameStore.getState().gameState && storedMode !== 'online') {
       const playerList = [
         { id: localPlayerId, username: 'Captain Amber' },
         { id: 'ai_1', username: 'Candamir (Bot)', isAi: true },
@@ -115,7 +130,6 @@ export default function GamePage() {
         'http://localhost:3001';
 
       const token = localStorage.getItem('hexara_auth_token') || sessionStorage.getItem('hexara_auth_token') || undefined;
-      const roomCode = sessionStorage.getItem('hexara_room_code') || 'archipelago_1';
       const username = localStorage.getItem('hexara_username') || 'Captain Amber';
 
       const socket = io(gameServerUrl, {

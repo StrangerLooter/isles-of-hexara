@@ -12,6 +12,10 @@ import {
   Trophy,
   Scroll,
   Check,
+  Copy,
+  CheckCircle2,
+  Globe,
+  Share2,
 } from 'lucide-react';
 import { createInitialGameState } from '@hexara/game-core';
 import { useGameStore } from '../../store/gameStore';
@@ -65,6 +69,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   // Match Info from sessionStorage
   const scenarioName = typeof window !== 'undefined' ? sessionStorage.getItem('hexara_scenario_name') || 'The First Island' : 'The First Island';
   const vpTarget = typeof window !== 'undefined' ? sessionStorage.getItem('hexara_vp_target') || '10' : '10';
+  const matchMode = typeof window !== 'undefined' ? sessionStorage.getItem('hexara_match_mode') || 'solo' : 'solo';
+  const roomCode = typeof window !== 'undefined' ? sessionStorage.getItem('hexara_room_code') || '' : '';
+  const [copiedRoomCode, setCopiedRoomCode] = useState(false);
+
+  const handleCopyRoom = () => {
+    if (!roomCode) return;
+    navigator.clipboard.writeText(roomCode);
+    setCopiedRoomCode(true);
+    setTimeout(() => setCopiedRoomCode(false), 2000);
+  };
 
   // Settings State
   const [settings, setSettings] = useState<GameSettingsState>(DEFAULT_SETTINGS);
@@ -227,8 +241,34 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           })}
         </div>
 
-        {/* Top-Right Action Controls (Active Scenario Badge & Camera Switchers) */}
+        {/* Top-Right Action Controls (Active Scenario Badge, Online Room Code, Camera Switchers) */}
         <div className="pointer-events-auto flex items-center gap-2">
+          {/* Online Live Room Badge with One-Click Copy */}
+          {matchMode === 'online' && roomCode && (
+            <button
+              onClick={handleCopyRoom}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 border-blue-400/70 bg-gradient-to-r from-blue-950/90 to-black/90 backdrop-blur-md shadow-lg hover:border-blue-300 hover:scale-105 active:scale-95 transition-all text-left group"
+              title="Click to copy room code"
+            >
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <div className="flex flex-col">
+                <span className="text-[8px] uppercase font-mono font-bold text-blue-300 tracking-wider">
+                  Room Code
+                </span>
+                <span className="text-xs font-black font-mono text-amber-300 tracking-wider">
+                  {roomCode}
+                </span>
+              </div>
+              <div className="ml-1 p-1 rounded bg-blue-500/20 text-blue-300 group-hover:text-white transition-colors">
+                {copiedRoomCode ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5" />
+                )}
+              </div>
+            </button>
+          )}
+
           {/* Active Scenario Badge (Locked Match Rules) */}
           <div className="hidden md:flex flex-col items-end px-3 py-1.5 rounded-xl border border-amber-500/40 bg-black/60 backdrop-blur-md shadow-lg">
             <span className="text-[10px] uppercase font-mono font-bold text-amber-300">
