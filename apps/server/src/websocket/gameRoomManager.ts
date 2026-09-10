@@ -23,6 +23,8 @@ export class GameRoomManager {
   private actionCounters = new Map<string, number>();
   private disconnectGraceTimers = new Map<string, DisconnectGraceInfo>(); // key: `${gameId}:${playerId}`
   private roomWatchdogs = new Map<string, NodeJS.Timeout>();
+  private turnTimers = new Map<string, { timeout: NodeJS.Timeout; turnId: number; deadline: number }>();
+  private turnCounters = new Map<string, number>();
   private lobbyManager: LobbyManager;
   private io: Server;
 
@@ -59,8 +61,9 @@ export class GameRoomManager {
       'Authoritative Game created from lobby'
     );
 
-    // Broadcast initial game state
+    // Broadcast initial game state & start 60s turn timer
     this.io.to(`game:${lobby.code}`).emit(SERVER_EVENTS.GAME_STATE, game);
+    this.startTurnTimer(game.id, lobby.code);
     this.resetWatchdog(game.id);
     this.checkAndTriggerAiMove(game.id);
 
@@ -133,6 +136,7 @@ export class GameRoomManager {
 
     socket.join(`game:${gameId}`);
     this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, game);
+    this.startTurnTimer(game.id, gameId);
     this.resetWatchdog(game.id);
     this.checkAndTriggerAiMove(gameId);
 
@@ -259,7 +263,9 @@ export class GameRoomManager {
     if (result.newState.phase === 'FINISHED' && result.newState.winnerId) {
       this.persistGameCompletion(result.newState);
       this.clearWatchdog(gameId);
+      this.clearTurnTimer(gameId);
     } else {
+      this.startTurnTimer(gameId);
       this.checkAndTriggerAiMove(gameId);
     }
 
@@ -278,11 +284,98 @@ export class GameRoomManager {
     this.roomWatchdogs.set(gameId, timer);
   }
 
+  public startTurnTimer(gameId: string, roomCode?: string): void {
+    const game = this.activeGames.get(gameId);
+    if (!game || game.phase === 'FINISHED') {
+      this.clearTurnTimer(gameId);
+      return;
+    }
+
+    this.clearTurnTimer(gameId);
+
+    const turnId = (this.turnCounters.get(gameId) ?? 0) + 1;
+    this.turnCounters.set(gameId, turnId);
+    const deadline = Date.now() + 60000;
+    const activePlayerId = game.playerOrder[game.currentPlayerIndex];
+
+    const timerPayload = {
+      currentPlayerId: activePlayerId,
+      turnDeadline: deadline,
+      turnId,
+      durationSeconds: 60,
+    };
+
+    this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.TURN_TIMER, timerPayload);
+    if (roomCode && roomCode !== gameId) {
+      this.io.to(`game:${roomCode}`).emit(SERVER_EVENTS.TURN_TIMER, timerPayload);
+    }
+
+    const timeout = setTimeout(() => {
+      this.handleTurnTimeout(gameId, turnId);
+    }, 60000);
+    timeout.unref();
+
+    this.turnTimers.set(gameId, { timeout, turnId, deadline });
+  }
+
   private clearWatchdog(gameId: string): void {
     const existing = this.roomWatchdogs.get(gameId);
     if (existing) {
       clearTimeout(existing);
       this.roomWatchdogs.delete(gameId);
+    }
+  }
+
+  public clearTurnTimer(gameId: string): void {
+    const existing = this.turnTimers.get(gameId);
+    if (existing) {
+      clearTimeout(existing.timeout);
+      this.turnTimers.delete(gameId);
+    }
+  }
+
+  private handleTurnTimeout(gameId: string, expectedTurnId: number): void {
+    const currentTimer = this.turnTimers.get(gameId);
+    if (!currentTimer || currentTimer.turnId !== expectedTurnId) return;
+
+    this.turnTimers.delete(gameId);
+
+    const game = this.activeGames.get(gameId);
+    if (!game || game.phase === 'FINISHED') return;
+
+    const activePlayerId = game.playerOrder[game.currentPlayerIndex];
+    logger.warn(
+      { gameId, activePlayerId, phase: game.phase, turnId: expectedTurnId },
+      'Server 60s turn timer expired. Executing safe phase-aware action'
+    );
+
+    this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.TURN_EXPIRED, {
+      playerId: activePlayerId,
+    });
+
+    // Determine safe fallback action based on phase so game NEVER gets stuck
+    let autoAction: GameAction | null = null;
+
+    if (game.phase === 'ROBBER_DISCARD') {
+      const pendingPlayerId = Object.keys(game.pendingDiscards).find(
+        (id) => (game.pendingDiscards[id] ?? 0) > 0
+      );
+      if (pendingPlayerId) {
+        autoAction = AiController.getNextMove(game, pendingPlayerId);
+      }
+    } else if (game.phase === 'ROLLING') {
+      autoAction = { type: 'ROLL_DICE', playerId: activePlayerId };
+    } else if (game.phase === 'MAIN') {
+      autoAction = { type: 'END_TURN', playerId: activePlayerId };
+    } else {
+      autoAction = AiController.getNextMove(game, activePlayerId);
+      if (!autoAction && game.phase !== 'SETUP_ROUND_1' && game.phase !== 'SETUP_ROUND_2') {
+        autoAction = { type: 'END_TURN', playerId: activePlayerId };
+      }
+    }
+
+    if (autoAction) {
+      this.handleAction(gameId, autoAction);
     }
   }
 

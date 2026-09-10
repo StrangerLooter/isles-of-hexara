@@ -74,6 +74,10 @@ async function bootstrap() {
   }
 }
 
-if (process.env.NODE_ENV !== 'test' && !process.env.TEST) {
+const isDirectEntry = Boolean(
+  process.argv[1] && (process.argv[1].endsWith('server.ts') || process.argv[1].endsWith('server.js'))
+);
+
+if (isDirectEntry && process.env.NODE_ENV !== 'test' && !process.env.TEST) {
   bootstrap();
 }

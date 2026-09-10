@@ -29,6 +29,7 @@ import { TradeOfferNotification } from '../../components/game-ui/TradeOfferNotif
 import { VictoryScreen } from '../../components/game-ui/VictoryScreen';
 import { GameCanvas } from '../../game/GameCanvas';
 import { useGameStore } from '../../store/gameStore';
+import { ChatMessage } from '../../components/game-ui/ChatLogModal';
 
 export default function GamePage() {
   const {
@@ -48,6 +49,15 @@ export default function GamePage() {
 
   const socketRef = useRef<Socket | null>(null);
   const [isOnlineConnected, setIsOnlineConnected] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      id: 'system_1',
+      sender: 'System',
+      text: 'Match started! Welcome to the Isles of Hexara.',
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      isSystem: true,
+    },
+  ]);
 
   // Setup Phase: Auto-activate placement mode for human player turn
   useEffect(() => {
@@ -179,6 +189,19 @@ export default function GamePage() {
       socket.on(SERVER_EVENTS.ERROR, (err: ServerErrorPayload) => {
         setErrorToast(err.message);
         setTimeout(() => setErrorToast(null), 4000);
+      });
+
+      socket.on(SERVER_EVENTS.CHAT_MESSAGE, (payload: { playerId: string; username: string; message: string; timestamp: number }) => {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: `${payload.playerId}_${payload.timestamp}_${Math.random()}`,
+            sender: payload.username,
+            text: payload.message,
+            timestamp: new Date(payload.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            isSystem: payload.playerId === 'system',
+          },
+        ]);
       });
 
       socket.on('connect_error', () => {
@@ -689,6 +712,45 @@ export default function GamePage() {
     setGameState(newGame);
   };
 
+  const handleSendMessage = (text: string) => {
+    const pName = gameState?.players[localPlayerId]?.username || 'You';
+    const newMsg: ChatMessage = {
+      id: `${localPlayerId}_${Date.now()}`,
+      sender: pName,
+      text,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+    setChatMessages((prev) => [...prev, newMsg]);
+
+    let storedRoom = sessionStorage.getItem('hexara_room_code') || 'HEXARA';
+    if (socketRef.current && isOnlineConnected) {
+      socketRef.current.emit(CLIENT_EVENTS.SEND_CHAT, {
+        gameId: storedRoom,
+        message: text,
+      });
+    } else {
+      // Offline solo mode bot responses for immersion
+      const botReplies = [
+        'Good luck out there, Captain!',
+        'May the dice roll in your favor!',
+        'Looking to trade some lumber for brick later?',
+        'Watch out for the Corsair on the desert sands!',
+      ];
+      setTimeout(() => {
+        const randomBot = Object.values(gameState?.players || {}).find((p) => p.isAi);
+        if (randomBot) {
+          const botMsg: ChatMessage = {
+            id: `bot_${Date.now()}`,
+            sender: randomBot.username,
+            text: botReplies[Math.floor(Math.random() * botReplies.length)],
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          };
+          setChatMessages((prev) => [...prev, botMsg]);
+        }
+      }, 1200);
+    }
+  };
+
   // Determine if local player needs to show discard modal
   const localPendingDiscard = gameState?.pendingDiscards?.[localPlayerId] ?? 0;
   const showDiscardModal =
@@ -709,6 +771,9 @@ export default function GamePage() {
         onHexSelect={handleHexSelect}
       />
       <GameHUD
+        socket={socketRef.current}
+        chatMessages={chatMessages}
+        onSendMessage={handleSendMessage}
         onRollDice={handleRollDice}
         onEndTurn={handleEndTurn}
         onConfirmPlacement={handleConfirmPlacement}

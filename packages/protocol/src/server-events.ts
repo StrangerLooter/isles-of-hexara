@@ -8,6 +8,7 @@ export const SERVER_EVENTS = {
   PLAYER_LEFT: 'server:player_left',
   TRADE_UPDATE: 'server:trade_update',
   TURN_EXPIRED: 'server:turn_expired',
+  TURN_TIMER: 'server:turn_timer',
   ERROR: 'server:error',
   CHAT_MESSAGE: 'server:chat_message',
 } as const;
@@ -60,6 +61,13 @@ export interface ServerTradeUpdatePayload {
 
 export interface ServerTurnExpiredPayload {
   playerId: string;
+}
+
+export interface ServerTurnTimerPayload {
+  currentPlayerId: string;
+  turnDeadline: number;
+  turnId: number;
+  durationSeconds: number;
 }
 
 export interface ServerErrorPayload {

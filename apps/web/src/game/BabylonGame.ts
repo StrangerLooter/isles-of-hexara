@@ -959,16 +959,16 @@ export class BabylonGame {
         // y=1.20 is well above hex tops (0.66), tokens (0.74), and robber (0.68)
         const vNode = MeshBuilder.CreateCylinder(
           `node_${v.id}`,
-          { diameter: 1.10, height: 0.05, tessellation: 20 },
+          { diameter: 1.30, height: 0.08, tessellation: 24 },
           this.scene
         );
-        vNode.position = new Vector3(v.x, 1.20, v.z);
+        vNode.position = new Vector3(v.x, 1.22, v.z);
 
         const vMat = new StandardMaterial(`vMat_${v.id}`, this.scene);
         vMat.diffuseColor = new Color3(1.0, 1.0, 1.0);
-        vMat.emissiveColor = new Color3(0.95, 0.95, 0.95);
-        vMat.specularColor = new Color3(0.6, 0.6, 0.6);
-        vMat.alpha = 0.88;
+        vMat.emissiveColor = new Color3(1.0, 1.0, 1.0);
+        vMat.specularColor = new Color3(0.8, 0.8, 0.8);
+        vMat.alpha = 0.92;
         vNode.material = vMat;
         vNode.setEnabled(false); // Hidden during normal gameplay to keep board clean
 

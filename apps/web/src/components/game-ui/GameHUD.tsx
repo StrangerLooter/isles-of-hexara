@@ -31,8 +31,13 @@ import { FullscreenButton } from '../common/FullscreenButton';
 import { DevCardPanel, DevCardParams } from './DevCardPanel';
 import { TurnTimer } from './TurnTimer';
 import { VoiceChatControls } from './VoiceChatControls';
+import { ResourceFlyAnimation } from './ResourceFlyAnimation';
+import type { Socket } from 'socket.io-client';
 
 interface GameHUDProps {
+  socket?: Socket | null;
+  chatMessages?: ChatMessage[];
+  onSendMessage?: (text: string) => void;
   onRollDice?: () => void;
   onEndTurn?: () => void;
   onResetCamera?: () => void;
@@ -41,6 +46,9 @@ interface GameHUDProps {
 }
 
 export const GameHUD: React.FC<GameHUDProps> = ({
+  socket,
+  chatMessages: externalChatMessages,
+  onSendMessage: externalSendMessage,
   onRollDice,
   onEndTurn,
   onResetCamera,
@@ -197,6 +205,10 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   };
 
   const handleSendMessage = (text: string) => {
+    if (externalSendMessage) {
+      externalSendMessage(text);
+      return;
+    }
     const newMsg: ChatMessage = {
       id: Date.now().toString(),
       sender: localPlayer?.username || 'You',
@@ -205,6 +217,8 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     };
     setChatMessages((prev) => [...prev, newMsg]);
   };
+
+  const activeChatList = externalChatMessages || chatMessages;
 
   return (
     <div className="pointer-events-none fixed inset-0 z-30 flex flex-col justify-between p-3 select-none">
@@ -270,9 +284,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </button>
           )}
 
-          {/* Voice Chat Controls — only in online rooms */}
+          {/* Voice Chat Controls — available in online rooms or local */}
           {matchMode === 'online' && roomCode && (
-            <VoiceChatControls roomCode={roomCode} />
+            <VoiceChatControls
+              roomCode={roomCode}
+              socket={socket}
+              localPlayerId={localPlayerId}
+              username={localPlayer?.username}
+            />
           )}
 
           {/* Active Scenario Badge (Locked Match Rules) */}
@@ -405,9 +424,9 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           )}
         </div>
 
-        {/* Left Piece Supply Box during Placement (matching Reference Image 1 & 2) */}
+        {/* Left Piece Supply Box during Placement (Offset so it NEVER overlaps LeftToolbar) */}
         {buildMode !== 'none' && localPlayer && (
-          <div className="pointer-events-auto absolute left-2 md:left-4 top-1/2 -translate-y-1/2 bg-gradient-to-r from-black/90 to-black/70 border-2 border-stone-800 rounded-2xl p-3.5 shadow-2xl flex items-center gap-3 animate-in slide-in-from-left-4 backdrop-blur-md">
+          <div className="pointer-events-auto absolute left-16 md:left-20 top-1/2 -translate-y-1/2 bg-gradient-to-r from-black/95 to-black/80 border-2 border-amber-600/80 rounded-2xl p-3.5 shadow-2xl flex items-center gap-3 animate-in slide-in-from-left-4 backdrop-blur-md z-20">
             <div className="flex flex-col items-center">
               <div
                 className="w-14 h-12 rounded-xl flex items-center justify-center shadow-lg border border-white/20"
@@ -426,7 +445,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               </span>
             </div>
             {/* Small red/gold pointer tab pointing toward board */}
-            <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-8 border-l-red-500 animate-pulse" />
+            <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-8 border-l-amber-500 animate-pulse" />
           </div>
         )}
       </div>
@@ -637,8 +656,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         isOpen={isChatLogOpen}
         onClose={() => setChatLogOpen(false)}
         logs={gameState.logs || []}
-        chatMessages={chatMessages}
+        chatMessages={activeChatList}
         onSendMessage={handleSendMessage}
+      />
+
+      {/* Floating Animated Resource Cards and Dev Card Gain */}
+      <ResourceFlyAnimation
+        resources={localPlayer?.resources}
+        devCardCount={localPlayer?.devCards?.length || 0}
       />
 
       <AlmanacModal

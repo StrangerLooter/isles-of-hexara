@@ -174,7 +174,10 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
   const currentScenario =
     CAMPAIGN_SCENARIOS.find((s) => s.id === selectedScenarioId) || CAMPAIGN_SCENARIOS[0];
 
+  const isHost = gameMode !== 'online' || onlineSubMode === 'create';
+
   const handleShuffleBoard = () => {
+    if (!isHost) return;
     setIsShuffling(true);
     const newSeed = Math.floor(100000 + Math.random() * 900000);
     setBoardSeed(newSeed);
@@ -255,13 +258,19 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
               return (
                 <div
                   key={scen.id}
-                  onClick={() => setSelectedScenarioId(scen.id)}
-                  className={`relative rounded-xl overflow-hidden cursor-pointer transition-all duration-200 border-2 flex flex-col justify-between p-4 bg-gradient-to-b ${
+                  onClick={() => {
+                    if (isHost) setSelectedScenarioId(scen.id);
+                  }}
+                  className={`relative rounded-xl overflow-hidden ${
+                    isHost ? 'cursor-pointer' : 'cursor-default'
+                  } transition-all duration-200 border-2 flex flex-col justify-between p-4 bg-gradient-to-b ${
                     scen.imageBg
                   } ${
                     isSelected
                       ? 'border-amber-300 ring-2 ring-amber-400/70 shadow-[0_0_25px_rgba(245,158,11,0.5)] scale-[1.02]'
-                      : 'border-amber-900/60 opacity-85 hover:opacity-100 hover:border-amber-500/70'
+                      : isHost
+                      ? 'border-amber-900/60 opacity-85 hover:opacity-100 hover:border-amber-500/70'
+                      : 'border-amber-950/40 opacity-50'
                   }`}
                 >
                   {/* Scenario Header Info */}
@@ -376,9 +385,20 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
                   <Sliders className="w-4 h-4 text-amber-400" />
                   <span>Pre-Match Game Configuration</span>
                 </h4>
-                <span className="text-[10px] text-amber-400/80 font-mono">
-                  Official Catan 25th Anniv. Engine
-                </span>
+                <div className="flex items-center gap-2">
+                  {isHost ? (
+                    <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
+                      👑 Room Host
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/40 px-2 py-0.5 rounded-full font-mono font-bold flex items-center gap-1">
+                      🛡️ Guest Voyager (Host Configured)
+                    </span>
+                  )}
+                  <span className="text-[10px] text-amber-400/80 font-mono hidden sm:inline">
+                    Official Catan 25th Anniv. Engine
+                  </span>
+                </div>
               </div>
 
               {/* Mode & Player Count in 2 columns */}
@@ -573,11 +593,12 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
               )}
 
               {/* Victory Points Slider */}
-              <div className="bg-black/30 p-3.5 rounded-xl border border-amber-600/20">
+              <div className={`bg-black/30 p-3.5 rounded-xl border border-amber-600/20 ${!isHost ? 'opacity-60' : ''}`}>
                 <div className="flex justify-between text-xs font-bold text-gray-200 mb-1.5">
                   <span className="flex items-center gap-1.5 text-amber-300">
                     <Award className="w-4 h-4 text-amber-400" />
                     Victory Points Target:
+                    {!isHost && <span className="text-[10px] text-blue-300 ml-1">(Host controlled)</span>}
                   </span>
                   <span className="text-amber-400 text-sm font-black">{vpTarget} VP</span>
                 </div>
@@ -586,8 +607,9 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
                   min={8}
                   max={16}
                   value={vpTarget}
+                  disabled={!isHost}
                   onChange={(e) => setVpTarget(Number(e.target.value))}
-                  className="w-full accent-amber-500 bg-gray-800 h-2 rounded-lg cursor-pointer"
+                  className="w-full accent-amber-500 bg-gray-800 h-2 rounded-lg cursor-pointer disabled:cursor-not-allowed"
                 />
                 <div className="flex justify-between text-[9px] text-amber-400/60 font-mono mt-1">
                   <span>8 VP (Fast)</span>
@@ -678,7 +700,11 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
               className="catan-btn-gold w-full py-4 rounded-xl text-base font-black uppercase tracking-widest flex items-center justify-center gap-3 shadow-[0_10px_25px_rgba(245,158,11,0.5)] active:scale-95 transition-all"
             >
               <Play className="w-5 h-5 fill-current" />
-              <span>Launch Match • {currentScenario.name}</span>
+              <span>
+                {gameMode === 'online' && onlineSubMode === 'join'
+                  ? `Join Room (${joinRoomCodeInput || 'HEXARA'})`
+                  : `Launch Match • ${currentScenario.name}`}
+              </span>
             </button>
           </div>
         </div>
