@@ -657,6 +657,16 @@ export function executeGameAction(
         next.phase = 'ROBBER_MOVE';
       } else if (action.card === 'year_of_plenty') {
         const [res1, res2] = action.params?.yearOfPlentyResources || ['grain', 'ore'];
+        const reqCounts: Partial<Record<ResourceType, number>> = {};
+        reqCounts[res1] = (reqCounts[res1] ?? 0) + 1;
+        reqCounts[res2] = (reqCounts[res2] ?? 0) + 1;
+
+        for (const [r, needed] of Object.entries(reqCounts) as [ResourceType, number][]) {
+          if ((next.resourceSupply[r] ?? 0) < needed) {
+            return { success: false, newState: state, error: `Bank supply is out of ${r}` };
+          }
+        }
+
         player.resources[res1] = (player.resources[res1] ?? 0) + 1;
         player.resources[res2] = (player.resources[res2] ?? 0) + 1;
         next.resourceSupply[res1] = Math.max(0, next.resourceSupply[res1] - 1);
@@ -680,22 +690,33 @@ export function executeGameAction(
         recalculateAllVictoryPoints(next);
         next.logs.push(`${player.username} revealed a Victory Point card!`);
       } else if (action.card === 'road_building') {
+        if (player.roadsRemaining <= 0) {
+          return { success: false, newState: state, error: 'No road pieces remaining in your supply' };
+        }
+
         if (action.params?.roadBuildingEdges && action.params.roadBuildingEdges.length > 0) {
+          const maxRoadsToPlace = Math.min(2, player.roadsRemaining);
+          let placedCount = 0;
           for (const edgeId of action.params.roadBuildingEdges) {
-            const edge = next.board.edges[edgeId];
-            if (edge && !edge.road && player.roadsRemaining > 0) {
-              edge.road = { playerId: action.playerId };
-              player.roadsRemaining -= 1;
+            if (placedCount >= maxRoadsToPlace) break;
+            const val = canBuildRoad(next, action.playerId, edgeId, false);
+            if (!val.valid) {
+              return { success: false, newState: state, error: `Invalid road placement: ${val.reason}` };
             }
+            const edge = next.board.edges[edgeId];
+            edge.road = { playerId: action.playerId };
+            player.roadsRemaining -= 1;
+            placedCount++;
           }
           const lrResult = evaluateLongestRoad(next.board, next.playerOrder, next.longestRoadOwnerId);
           next.longestRoadOwnerId = lrResult.newOwnerId;
           next.longestRoadLength = lrResult.playerLengths[lrResult.newOwnerId ?? ''] || 0;
           recalculateAllVictoryPoints(next);
         } else {
-          // Grant resources for 2 free roads
-          player.resources.lumber = (player.resources.lumber ?? 0) + 2;
-          player.resources.brick = (player.resources.brick ?? 0) + 2;
+          // Grant resources for up to 2 free roads
+          const count = Math.min(2, player.roadsRemaining);
+          player.resources.lumber = (player.resources.lumber ?? 0) + count;
+          player.resources.brick = (player.resources.brick ?? 0) + count;
         }
 
         next.logs.push(`${player.username} played Road Building!`);
@@ -734,13 +755,36 @@ export function executeGameAction(
       if (action.playerId !== activePlayerId) {
         return { success: false, newState: state, error: 'Only active player can propose trades' };
       }
+      if (next.phase !== 'MAIN') {
+        return { success: false, newState: state, error: 'Trades can only be proposed during the main action phase' };
+      }
       const player = next.players[action.playerId];
       if (!player) return { success: false, newState: state, error: 'Player does not exist' };
 
+      // Calculate total offered and requested
+      let totalOffer = 0;
+      let totalRequest = 0;
       for (const [res, count] of Object.entries(action.offer) as [ResourceType, number][]) {
-        if ((player.resources[res] ?? 0) < (count ?? 0)) {
-          return { success: false, newState: state, error: `You do not have enough ${res} to offer` };
+        const c = count ?? 0;
+        if (c > 0) {
+          totalOffer += c;
+          if ((player.resources[res] ?? 0) < c) {
+            return { success: false, newState: state, error: `You do not have enough ${res} to offer` };
+          }
+          // Prevent same-resource loophole (e.g. 3 Ore for 1 Ore)
+          if ((action.request[res] ?? 0) > 0) {
+            return { success: false, newState: state, error: `Cannot offer and request the same resource (${res})` };
+          }
         }
+      }
+
+      for (const count of Object.values(action.request)) {
+        totalRequest += count ?? 0;
+      }
+
+      // Rule: No free gifting (must offer >=1 and request >=1)
+      if (totalOffer <= 0 || totalRequest <= 0) {
+        return { success: false, newState: state, error: 'Cannot propose empty trades or free gifts' };
       }
 
       next.activeTrade = {
