@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "buildCommand": "pnpm --filter @hexara/shared build && pnpm --filter @hexara/game-core build && pnpm --filter @hexara/protocol build && pnpm --filter @hexara/web build",
+  "buildCommand": "npm install -g pnpm@12 && pnpm install --frozen-lockfile && pnpm --filter @hexara/web build",
   "outputDirectory": "apps/web/dist",
-  "framework": "vite",
+  "framework": null,
   "rewrites": [
     {
       "source": "/(.*)",

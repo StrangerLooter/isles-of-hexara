@@ -342,6 +342,11 @@ export function setupSocketServer(httpServer: HttpServer): {
       }
 
       // Synchronized 3 -> 2 -> 1 -> START countdown before launching match
+      // Narrow the types into local consts so TypeScript can see them as non-undefined
+      // inside the setTimeout closures (strict mode doesn't track through async boundaries)
+      const confirmedLobby = startRes.lobby;
+      const confirmedPlayers = startRes.players;
+
       io.to(`game:${code}`).emit(SERVER_EVENTS.COUNTDOWN, { count: 3, message: 'Setting sail in 3...' });
 
       setTimeout(() => {
@@ -355,10 +360,10 @@ export function setupSocketServer(httpServer: HttpServer): {
       setTimeout(() => {
         io.to(`game:${code}`).emit(SERVER_EVENTS.COUNTDOWN, { count: 0, message: 'Voyage begins!' });
         // Initialize game state and broadcast
-        const game = roomManager.createGameFromLobby(startRes.lobby, startRes.players);
+        const game = roomManager.createGameFromLobby(confirmedLobby, confirmedPlayers);
         io.to(`game:${code}`).emit(
           SERVER_EVENTS.LOBBY_STATE,
-          lobbyManager.toPayload(startRes.lobby)
+          lobbyManager.toPayload(confirmedLobby)
         );
         roomManager.broadcastGameState(game.id, game, code);
       }, 3000);

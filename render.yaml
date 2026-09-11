@@ -4,8 +4,14 @@ services:
     env: node
     plan: free
     region: oregon
-    buildCommand: pnpm --filter @hexara/shared build && pnpm --filter @hexara/game-core build && pnpm --filter @hexara/protocol build && pnpm --filter @hexara/server build
-    startCommand: pnpm --filter @hexara/server start
+    buildCommand: >
+      npm install -g pnpm@12 &&
+      pnpm install --frozen-lockfile &&
+      pnpm --filter @hexara/shared build &&
+      pnpm --filter @hexara/game-core build &&
+      pnpm --filter @hexara/protocol build &&
+      pnpm --filter @hexara/server build
+    startCommand: node apps/server/dist/server.js
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
