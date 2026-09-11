@@ -42,6 +42,7 @@ import { AuthModal, UserProfile } from '../components/modals/AuthModal';
 import { soundManager } from '../game/SoundManager';
 import { CLIENT_EVENTS } from '@hexara/protocol';
 import { io, Socket } from 'socket.io-client';
+import { SERVER_URL } from '../lib/serverUrl';
 
 const ROOM_CODE_CHARS = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 function generateRoomCode(): string {
@@ -214,7 +215,7 @@ export default function HomePage() {
 
       // Emit create_game to server
       const token = localStorage.getItem('hexara_auth_token') || sessionStorage.getItem('hexara_auth_token');
-      const socket = io('http://localhost:3001', {
+      const socket = io(SERVER_URL, {
         transports: ['websocket', 'polling'],
         auth: { token, username: userProfile.username, playerId: userProfile.id },
       });

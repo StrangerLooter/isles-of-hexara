@@ -31,6 +31,7 @@ import { GameCanvas } from '../../game/GameCanvas';
 import { useGameStore } from '../../store/gameStore';
 import { ChatMessage } from '../../components/game-ui/ChatLogModal';
 import { soundManager } from '../../game/SoundManager';
+import { SERVER_URL } from '../../lib/serverUrl';
 
 export default function GamePage() {
   const {
@@ -144,14 +145,7 @@ export default function GamePage() {
     }
 
     if (storedMode === 'online') {
-      const gameServerUrl =
-        (typeof window !== 'undefined' && (window as any).__GAME_SERVER_URL__) ||
-        (import.meta as any).env?.VITE_GAME_SERVER_URL ||
-        (import.meta as any).env?.NEXT_PUBLIC_GAME_SERVER_URL ||
-        (import.meta as any).env?.GAME_SERVER_URL ||
-        (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_GAME_SERVER_URL) ||
-        (typeof process !== 'undefined' && process.env?.GAME_SERVER_URL) ||
-        'http://localhost:3001';
+      const gameServerUrl = SERVER_URL;
 
       const token = localStorage.getItem('hexara_auth_token') || sessionStorage.getItem('hexara_auth_token') || undefined;
       const username = localStorage.getItem('hexara_username') || sessionStorage.getItem('hexara_username') || 'Captain Voyager';

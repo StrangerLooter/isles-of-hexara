@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Compass, RefreshCw, AlertCircle, Sparkles } from 'lucide-react';
+import { SERVER_URL } from '../../lib/serverUrl';
 
 interface LoadingScreenProps {
   onLoaded: () => void;
@@ -46,7 +47,7 @@ export const LoadingScreen: React.FC<LoadingScreenProps> = ({ onLoaded }) => {
     });
 
     // Also check backend health without blocking if offline
-    fetch('http://localhost:3001/health', { signal: AbortSignal.timeout(1500) })
+    fetch(`${SERVER_URL}/health`, { signal: AbortSignal.timeout(1500) })
       .catch(() => {})
       .finally(() => {
         // Health check recorded

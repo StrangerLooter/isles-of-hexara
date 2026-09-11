@@ -25,6 +25,7 @@ import {
   ServerErrorPayload,
 } from '@hexara/protocol';
 import { soundManager } from '../../game/SoundManager';
+import { SERVER_URL } from '../../lib/serverUrl';
 
 interface LobbyRoomModalProps {
   isOpen: boolean;
@@ -36,7 +37,6 @@ interface LobbyRoomModalProps {
   socket?: Socket | null;
 }
 
-const SERVER_URL = 'http://localhost:3001';
 
 export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
   isOpen,

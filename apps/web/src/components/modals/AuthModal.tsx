@@ -14,6 +14,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { soundManager } from '../../game/SoundManager';
+import { API_BASE } from '../../lib/serverUrl';
 
 export interface UserProfile {
   id: string;
@@ -45,7 +46,6 @@ interface AuthModalProps {
   onAuthSuccess?: (profile: UserProfile) => void;
 }
 
-const API_BASE = 'http://localhost:3001';
 
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,

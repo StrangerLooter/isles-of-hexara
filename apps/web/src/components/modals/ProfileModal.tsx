@@ -6,6 +6,7 @@ import { Shirt, Armchair, Shield, Trophy, BarChart3, LogOut, Check, Edit2, Save,
 import { CharacterModelViewer } from '../lobby/CharacterModelViewer';
 import { CREST_AVATARS, UserProfile } from './AuthModal';
 import { soundManager } from '../../game/SoundManager';
+import { SERVER_URL } from '../../lib/serverUrl';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -74,7 +75,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
     const token = localStorage.getItem('hexara_auth_token') || sessionStorage.getItem('hexara_auth_token');
     if (token) {
       try {
-        await fetch('http://localhost:3001/api/profiles/me', {
+        await fetch(`${SERVER_URL}/api/profiles/me`, {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
