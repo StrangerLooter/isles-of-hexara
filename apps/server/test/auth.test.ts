@@ -65,4 +65,20 @@ describe('Auth & JWT & Profile Progression', () => {
     assert.strictEqual(afterSecondWin?.experience, 1400);
     assert.strictEqual(afterSecondWin?.level, 2);
   });
+
+  test('Demo account seeding creates Captain Jack, Lady Eleanor, and Master Eldon', async () => {
+    const { seedDemoAccounts, DEMO_ACCOUNTS } = await import('../src/database/seedDemoAccounts.js');
+    await seedDemoAccounts();
+
+    for (const demo of DEMO_ACCOUNTS) {
+      const user = await UserRepository.findByEmailOrUsername(demo.username);
+      assert.notStrictEqual(user, null);
+      assert.strictEqual(user?.email, demo.email);
+
+      const profile = await ProfileRepository.findByUserId(user!._id);
+      assert.notStrictEqual(profile, null);
+      assert.strictEqual(profile?.level, demo.level);
+      assert.strictEqual(profile?.wins, demo.wins);
+    }
+  });
 });

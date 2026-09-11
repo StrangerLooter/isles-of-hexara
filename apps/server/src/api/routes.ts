@@ -5,6 +5,8 @@ import { signJwt, verifyJwt } from '../auth/jwt.js';
 import { GameRecordRepository } from '../database/models/GameRecord.js';
 import { ProfileRepository } from '../database/models/Profile.js';
 import { UserRepository } from '../database/models/User.js';
+import { FriendRepository } from '../database/models/Friend.js';
+import { DEMO_ACCOUNTS, seedDemoAccounts } from '../database/seedDemoAccounts.js';
 import { isMongoConnected } from '../database/mongoClient.js';
 
 const guestAuthSchema = z.object({
@@ -268,6 +270,103 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
     });
 
     return reply.send({ profile: updated });
+  });
+
+  // 4b. Demo Account Sign In (Phase 11.3)
+  fastify.post('/api/auth/demo', async (request, reply) => {
+    const body = (request.body as { account?: string }) || {};
+    const accountKey = (body.account || 'captain').toLowerCase();
+    const demo = DEMO_ACCOUNTS.find(
+      (d) => d.username.toLowerCase().includes(accountKey) || d.email.toLowerCase().includes(accountKey)
+    ) || DEMO_ACCOUNTS[0];
+
+    await seedDemoAccounts();
+    const user = await UserRepository.findByEmailOrUsername(demo.username);
+    if (!user) {
+      return reply.status(500).send({ error: 'DEMO_SEED_ERROR', message: 'Failed to seed demo user' });
+    }
+
+    const profile = await ProfileRepository.findByUserId(user._id);
+    const token = signJwt({
+      sub: user._id,
+      name: user.username,
+      guest: false,
+    });
+
+    return reply.status(200).send({
+      token,
+      user: { id: user._id, username: user.username, email: user.email },
+      profile,
+    });
+  });
+
+  // 4c. Social: Friends & Presence (Phase 12)
+  fastify.get('/api/social/friends', async (request, reply) => {
+    const token = extractToken(request);
+    let userId = 'default_user';
+    if (token) {
+      const decoded = verifyJwt(token);
+      if (decoded) userId = decoded.sub;
+    }
+
+    const friends = await FriendRepository.getFriends(userId);
+    return reply.send({ friends });
+  });
+
+  fastify.post('/api/social/friends/request', async (request, reply) => {
+    const token = extractToken(request);
+    let userId = 'default_user';
+    if (token) {
+      const decoded = verifyJwt(token);
+      if (decoded) userId = decoded.sub;
+    }
+
+    const body = request.body as { username?: string; avatar?: string };
+    if (!body?.username) {
+      return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'Username required' });
+    }
+
+    const rel = await FriendRepository.sendRequest(userId, body.username, body.avatar || '⚓');
+    return reply.status(201).send({ request: rel });
+  });
+
+  fastify.post('/api/social/invite', async (request, reply) => {
+    const token = extractToken(request);
+    let userId = 'default_user';
+    let username = 'Captain Voyager';
+    if (token) {
+      const decoded = verifyJwt(token);
+      if (decoded) {
+        userId = decoded.sub;
+        username = decoded.name;
+      }
+    }
+
+    const body = request.body as { toUserId: string; roomCode: string; scenarioName?: string };
+    if (!body?.toUserId || !body?.roomCode) {
+      return reply.status(400).send({ error: 'INVALID_PAYLOAD', message: 'toUserId and roomCode required' });
+    }
+
+    const invite = await FriendRepository.sendInvite(
+      userId,
+      username,
+      body.toUserId,
+      body.roomCode,
+      body.scenarioName
+    );
+    return reply.status(200).send({ invite });
+  });
+
+  fastify.get('/api/social/invites', async (request, reply) => {
+    const token = extractToken(request);
+    let userId = 'default_user';
+    if (token) {
+      const decoded = verifyJwt(token);
+      if (decoded) userId = decoded.sub;
+    }
+
+    const invites = await FriendRepository.getInvites(userId);
+    return reply.send({ invites });
   });
 
   // 5. Game Records & History

@@ -217,9 +217,13 @@ export class AiController {
     if (game.phase === 'MAIN') {
       const res = player.resources;
 
-      // Play Knight card if owned and robber is blocking friendly hex
-      const hasKnight = player.devCards.includes('knight');
-      if (hasKnight) {
+      // Play Knight card if owned, not played this turn, not bought this turn, and robber is blocking friendly hex
+      const canPlayKnight =
+        !player.hasPlayedDevCardThisTurn &&
+        player.devCards.includes('knight') &&
+        !(player.boughtDevCardsThisTurn?.includes('knight'));
+
+      if (canPlayKnight) {
         const currentRobber = game.robberHexId || game.board.robberHexId;
         const myBlockedHex = Object.values(game.board.hexes).find((h) => {
           if (h.id !== currentRobber) return false;
