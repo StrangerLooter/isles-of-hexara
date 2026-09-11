@@ -510,6 +510,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </div>
 
+              {/* Quick Demo Accounts for Testing (Section 65) */}
+              <div className="pt-2 border-t border-amber-900/40">
+                <span className="text-[10px] font-bold text-amber-300/70 uppercase tracking-wider block mb-1.5">
+                  Quick Demo Accounts:
+                </span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[
+                    { name: 'Arjun', email: 'arjun@catan.demo', pass: 'Catan@123' },
+                    { name: 'Priya', email: 'priya@catan.demo', pass: 'Catan@456' },
+                    { name: 'Rohan', email: 'rohan@catan.demo', pass: 'Catan@789' },
+                  ].map((demo) => (
+                    <button
+                      key={demo.name}
+                      type="button"
+                      onClick={() => {
+                        soundManager.playClick();
+                        setEmail(demo.email);
+                        setPassword(demo.pass);
+                      }}
+                      className="p-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-[11px] font-bold text-amber-200 text-center transition-all hover:scale-105"
+                    >
+                      {demo.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <button
                 type="submit"
                 disabled={isLoading}
