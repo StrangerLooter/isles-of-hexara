@@ -47,6 +47,19 @@ export const setReadySchema = z.object({
 });
 export type SetReadyPayload = z.infer<typeof setReadySchema>;
 
+export const setColorSchema = z.object({
+  color: z.string().min(1),
+  code: z.string().optional(),
+  gameId: z.string().optional(),
+});
+export type SetColorPayload = z.infer<typeof setColorSchema>;
+
+export const addAiSchema = z.object({
+  code: z.string().optional(),
+  gameId: z.string().optional(),
+});
+export type AddAiPayload = z.infer<typeof addAiSchema>;
+
 export const kickSeatSchema = z.object({
   seatPlayerId: z.string().min(1),
   code: z.string().optional(),

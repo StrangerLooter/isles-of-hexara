@@ -63,7 +63,27 @@ describe('Lobby & Room Code Management', () => {
     assert.strictEqual(kickByHost.success, true);
     assert.strictEqual(kickByHost.lobby?.seats.length, 2);
 
-    // 7. Start Game fills remaining seat with AI up to maxPlayers (3)
+    // 7. Test Color Selection & Uniqueness
+    // host has PLAYER_COLORS[0], p_2 has PLAYER_COLORS[1]
+    const dupColorRes = manager.setColor(lobby.code, 'p_2', lobby.seats[0].color);
+    assert.strictEqual(dupColorRes.success, false);
+    assert.strictEqual(dupColorRes.error, 'COLOR_ALREADY_TAKEN');
+
+    const validColorRes = manager.setColor(lobby.code, 'p_2', '#FFFFFF');
+    assert.strictEqual(validColorRes.success, true);
+    assert.strictEqual(lobby.seats.find((s) => s.playerId === 'p_2')?.color, '#FFFFFF');
+
+    // 8. Test Add AI
+    const addAiByNonHost = manager.addAi(lobby.code, 'p_2');
+    assert.strictEqual(addAiByNonHost.success, false);
+    assert.strictEqual(addAiByNonHost.error, 'HOST_ONLY_ACTION');
+
+    const addAiByHost = manager.addAi(lobby.code, 'host_1');
+    assert.strictEqual(addAiByHost.success, true);
+    assert.strictEqual(lobby.seats.length, 3);
+    assert.strictEqual(lobby.seats[2].isAi, true);
+
+    // 9. Start Game with fully populated seats
     const startRes = manager.startGame(lobby.code, 'host_1');
     assert.strictEqual(startRes.success, true);
     assert.strictEqual(startRes.players?.length, 3);

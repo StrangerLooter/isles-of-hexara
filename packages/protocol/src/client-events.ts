@@ -4,6 +4,8 @@ export const CLIENT_EVENTS = {
   JOIN_GAME: 'client:join_game',
   LEAVE_GAME: 'client:leave_game',
   SET_READY: 'client:set_ready',
+  SET_COLOR: 'client:set_color',
+  ADD_AI: 'client:add_ai',
   KICK_SEAT: 'client:kick_seat',
   START_GAME: 'client:start_game',
 

@@ -1,4 +1,5 @@
 import {
+  addAiSchema,
   chatMessageSchema,
   CLIENT_EVENTS,
   createGameSchema,
@@ -6,6 +7,7 @@ import {
   kickSeatSchema,
   leaveGameSchema,
   SERVER_EVENTS,
+  setColorSchema,
   setReadySchema,
   startGameSchema,
 } from '@hexara/protocol';
@@ -220,6 +222,48 @@ export function setupSocketServer(httpServer: HttpServer): {
           SERVER_EVENTS.LOBBY_STATE,
           lobbyManager.toPayload(result.lobby)
         );
+      }
+    });
+
+    // C2. LOBBY: Set Color
+    socket.on(CLIENT_EVENTS.SET_COLOR, (data: unknown) => {
+      const parsed = setColorSchema.safeParse(data);
+      if (!parsed.success) return;
+
+      const code = parsed.data.code || currentGameCode;
+      if (!code) return;
+
+      const result = lobbyManager.setColor(code, userId, parsed.data.color);
+      if (result.success && result.lobby) {
+        io.to(`game:${result.lobby.code}`).emit(
+          SERVER_EVENTS.LOBBY_STATE,
+          lobbyManager.toPayload(result.lobby)
+        );
+      } else if (!result.success) {
+        socket.emit(SERVER_EVENTS.ERROR, {
+          code: result.error || 'INVALID_ACTION',
+          message: `Cannot change color: ${result.error}`,
+        });
+      }
+    });
+
+    // C3. LOBBY: Add AI Bot
+    socket.on(CLIENT_EVENTS.ADD_AI, (data: unknown) => {
+      const parsed = addAiSchema.safeParse(data);
+      const code = parsed.success && parsed.data.code ? parsed.data.code : currentGameCode;
+      if (!code) return;
+
+      const result = lobbyManager.addAi(code, userId);
+      if (result.success && result.lobby) {
+        io.to(`game:${result.lobby.code}`).emit(
+          SERVER_EVENTS.LOBBY_STATE,
+          lobbyManager.toPayload(result.lobby)
+        );
+      } else if (!result.success) {
+        socket.emit(SERVER_EVENTS.ERROR, {
+          code: result.error || 'INVALID_ACTION',
+          message: `Cannot add AI: ${result.error}`,
+        });
       }
     });
 

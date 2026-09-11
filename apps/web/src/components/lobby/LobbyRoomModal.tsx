@@ -374,9 +374,24 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                 <Users className="w-4 h-4 text-amber-400" />
                 Crew Roster ({seats.length} / {maxPlayers})
               </span>
-              <span className="text-[10px] font-mono text-amber-400/60">
-                {amHost ? 'You are Host' : 'Voyager'}
-              </span>
+              <div className="flex items-center gap-2">
+                {amHost && seats.length < maxPlayers && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      soundManager.playClick();
+                      currentSocket?.emit(CLIENT_EVENTS.ADD_AI, { code: roomCode });
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-[11px] font-bold flex items-center gap-1 transition-all shadow-sm"
+                  >
+                    <Sparkles className="w-3 h-3 text-amber-400" />
+                    <span>+ Add AI</span>
+                  </button>
+                )}
+                <span className="text-[10px] font-mono text-amber-400/60">
+                  {amHost ? 'You are Host' : 'Voyager'}
+                </span>
+              </div>
             </div>
 
             {/* Render Filled Seats */}
@@ -420,6 +435,35 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                       <span className="text-[10px] text-amber-300/60 font-mono">
                         Seat #{idx + 1} &bull; {seat.isConnected ? 'Connected' : 'Reconnecting...'}
                       </span>
+                      {isMe && !seat.ready && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="text-[9px] text-amber-300/70 font-bold uppercase tracking-wider">Color:</span>
+                          {['#f59e0b', '#3b82f6', '#10b981', '#ef4444'].map((color) => {
+                            const isTaken = seats.some((s) => s.playerId !== seat.playerId && s.color?.toLowerCase() === color.toLowerCase());
+                            const isSelected = seat.color?.toLowerCase() === color.toLowerCase();
+                            return (
+                              <button
+                                key={color}
+                                type="button"
+                                disabled={isTaken}
+                                onClick={() => {
+                                  soundManager.playClick();
+                                  currentSocket?.emit(CLIENT_EVENTS.SET_COLOR, { code: roomCode, color });
+                                }}
+                                style={{ backgroundColor: color }}
+                                title={isTaken ? 'Color taken by another player' : 'Select color'}
+                                className={`w-3.5 h-3.5 rounded-full border transition-all ${
+                                  isSelected
+                                    ? 'ring-2 ring-white scale-125 border-white shadow-sm'
+                                    : isTaken
+                                    ? 'opacity-20 cursor-not-allowed border-black'
+                                    : 'border-black/60 hover:scale-110 opacity-80 hover:opacity-100'
+                                }`}
+                              />
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   </div>
 

@@ -198,6 +198,82 @@ export class LobbyManager {
     return { success: true, lobby };
   }
 
+  setColor(
+    code: string,
+    playerId: string,
+    color: string
+  ): { success: boolean; lobby?: Lobby; error?: string } {
+    const formattedCode = code.toUpperCase();
+    const lobby = this.lobbies.get(formattedCode);
+
+    if (!lobby) {
+      return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+
+    if (lobby.status !== 'waiting') {
+      return { success: false, error: 'GAME_ALREADY_STARTED' };
+    }
+
+    const seat = lobby.seats.find((s) => s.playerId === playerId);
+    if (!seat) {
+      return { success: false, error: 'NOT_IN_ROOM' };
+    }
+
+    // Check if another seat already picked this color
+    const existingTaken = lobby.seats.find(
+      (s) => s.playerId !== playerId && s.color.toLowerCase() === color.toLowerCase()
+    );
+    if (existingTaken) {
+      return { success: false, error: 'COLOR_ALREADY_TAKEN' };
+    }
+
+    seat.color = color;
+    return { success: true, lobby };
+  }
+
+  addAi(
+    code: string,
+    hostPlayerId: string
+  ): { success: boolean; lobby?: Lobby; error?: string } {
+    const formattedCode = code.toUpperCase();
+    const lobby = this.lobbies.get(formattedCode);
+
+    if (!lobby) {
+      return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+
+    if (lobby.hostId !== hostPlayerId) {
+      return { success: false, error: 'HOST_ONLY_ACTION' };
+    }
+
+    if (lobby.status !== 'waiting') {
+      return { success: false, error: 'GAME_ALREADY_STARTED' };
+    }
+
+    if (lobby.seats.length >= lobby.settings.maxPlayers) {
+      return { success: false, error: 'ROOM_FULL' };
+    }
+
+    const aiCount = lobby.seats.filter((s) => s.isAi).length;
+    const persona = AI_PERSONAS[aiCount % AI_PERSONAS.length];
+    const aiId = `ai_${aiCount + 1}`;
+
+    // Find first unused color
+    const usedColors = new Set(lobby.seats.map((s) => s.color));
+    const availableColor = PLAYER_COLORS.find((c) => !usedColors.has(c)) || PLAYER_COLORS[lobby.seats.length % PLAYER_COLORS.length];
+
+    lobby.seats.push({
+      playerId: aiId,
+      username: persona.username,
+      color: availableColor,
+      ready: true,
+      isAi: true,
+      isConnected: true,
+    });
+
+    return { success: true, lobby };
+  }
+
   kickSeat(
     code: string,
     hostPlayerId: string,
@@ -285,12 +361,12 @@ export class LobbyManager {
     const targetPlayerCount = lobby.settings.maxPlayers;
     const finalPlayers: Array<{ id: string; username: string; isAi?: boolean }> = [];
 
-    // Add seated humans
+    // Add seated players
     for (const seat of lobby.seats) {
       finalPlayers.push({
         id: seat.playerId,
         username: seat.username,
-        isAi: false,
+        isAi: seat.isAi ?? false,
       });
     }
 
