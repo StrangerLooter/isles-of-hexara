@@ -1,5 +1,6 @@
 import assert from 'node:assert';
-import test, { describe } from 'node:test';
+import test, { describe, after } from 'node:test';
+import mongoose from 'mongoose';
 import { executeGameAction, GameState } from '@hexara/game-core';
 import { AiController } from '../src/ai/aiController.js';
 import { LobbyManager } from '../src/rooms/lobbyManager.js';
@@ -138,5 +139,9 @@ describe('Server & Full Gameplay Integration', () => {
       ['MAIN', 'FINISHED', 'ROLLING', 'ROBBER_MOVE', 'ROBBER_STEAL'].includes(game.phase),
       true
     );
+  });
+
+  after(async () => {
+    await mongoose.disconnect();
   });
 });

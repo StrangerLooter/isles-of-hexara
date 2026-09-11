@@ -4,6 +4,7 @@ import React from 'react';
 import { BUILDING_COSTS, BuildingType } from '@hexara/shared';
 import { Hammer, Home, Landmark, Scroll, X, Sparkles } from 'lucide-react';
 import { useGameStore } from '../../store/gameStore';
+import { BuyDevCardModal } from './BuyDevCardModal';
 
 interface BuildModalProps {
   onBuyDevCard?: () => void;
@@ -17,6 +18,8 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
     localPlayerId,
     setBuildMode,
   } = useGameStore();
+
+  const [isBuyModalOpen, setBuyModalOpen] = React.useState(false);
 
   if (!isBuildModalOpen || !gameState) return null;
 
@@ -71,8 +74,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
 
   const handleSelect = (type: BuildingType | 'dev_card') => {
     if (type === 'dev_card') {
-      onBuyDevCard?.();
-      setBuildModalOpen(false);
+      setBuyModalOpen(true);
     } else {
       setBuildMode(type);
       setBuildModalOpen(false);
@@ -214,6 +216,15 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
             })}
           </div>
         )}
+
+        <BuyDevCardModal
+          isOpen={isBuyModalOpen}
+          onClose={() => setBuyModalOpen(false)}
+          onConfirmBuy={() => {
+            onBuyDevCard?.();
+            setBuildModalOpen(false);
+          }}
+        />
       </div>
     </div>
   );

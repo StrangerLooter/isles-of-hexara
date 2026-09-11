@@ -67,6 +67,7 @@ export interface MatchOptions {
   balancedDice: boolean;
   randomMap: boolean;
   aiDifficulty: 'NOVICE' | 'EXPERT' | 'MASTER';
+  turnDurationSeconds: number;
 }
 
 interface ScenarioSelectionModalProps {
@@ -87,10 +88,15 @@ export const ScenarioSelectionModal: React.FC<ScenarioSelectionModalProps> = ({
   const [balancedDice, setBalancedDice] = useState(true);
   const [randomMap, setRandomMap] = useState(false);
   const [aiDifficulty, setAiDifficulty] = useState<'NOVICE' | 'EXPERT' | 'MASTER'>('MASTER');
+  const [turnTimeOption, setTurnTimeOption] = useState<'30' | '60' | '90' | '120' | 'custom'>('60');
+  const [customTurnSeconds, setCustomTurnSeconds] = useState(45);
 
   if (!isOpen) return null;
 
   const handleStart = () => {
+    const finalTurnDuration =
+      turnTimeOption === 'custom' ? Math.max(10, Math.min(600, customTurnSeconds)) : Number(turnTimeOption);
+
     onStartMatch(selectedScenario, {
       victoryPoints: vpTarget,
       randomPlayerStarts,
@@ -98,6 +104,7 @@ export const ScenarioSelectionModal: React.FC<ScenarioSelectionModalProps> = ({
       balancedDice,
       randomMap,
       aiDifficulty,
+      turnDurationSeconds: finalTurnDuration,
     });
     onClose();
   };
@@ -234,6 +241,48 @@ export const ScenarioSelectionModal: React.FC<ScenarioSelectionModalProps> = ({
                 </span>
               </label>
             </div>
+
+              {/* Player Turn Time Configuration */}
+              <div className="pt-2 border-t border-amber-900/40">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                    Player Turn Time
+                  </span>
+                  <span className="text-xs font-mono font-black text-amber-400">
+                    {turnTimeOption === 'custom' ? `${customTurnSeconds}s (Custom)` : `${turnTimeOption}s`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 mb-2">
+                  {(['30', '60', '90', '120', 'custom'] as const).map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setTurnTimeOption(opt)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold uppercase transition-all ${
+                        turnTimeOption === opt
+                          ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-amber-950 font-black shadow-md border border-amber-300'
+                          : 'bg-[#260808] text-gray-300 border border-amber-900/30 hover:border-amber-600/50 hover:text-amber-200'
+                      }`}
+                    >
+                      {opt === 'custom' ? 'Custom' : `${opt}s`}
+                    </button>
+                  ))}
+                </div>
+                {turnTimeOption === 'custom' && (
+                  <div className="flex items-center gap-2 bg-[#1f0909] p-2 rounded-lg border border-amber-700/50 mt-1">
+                    <span className="text-xs text-gray-300 font-serif">Seconds:</span>
+                    <input
+                      type="number"
+                      min={10}
+                      max={300}
+                      value={customTurnSeconds}
+                      onChange={(e) => setCustomTurnSeconds(Math.max(10, Math.min(600, Number(e.target.value) || 10)))}
+                      className="w-20 bg-black/70 border border-amber-500/50 rounded px-2 py-1 text-xs text-amber-300 font-mono font-black"
+                    />
+                    <span className="text-[10px] text-gray-400">(10s – 300s)</span>
+                  </div>
+                )}
+              </div>
 
             {/* AI Opponents Difficulty */}
             <div className="pt-2 border-t border-amber-900/40">

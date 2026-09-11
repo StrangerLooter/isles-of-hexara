@@ -15,9 +15,27 @@ import {
   Copy,
   CheckCircle2,
   Globe,
-  Share2,
+  Plus,
+  Minus,
+  Maximize2,
+  Menu,
+  MessageSquare,
+  Users,
+  Settings as SettingsIcon,
+  HelpCircle,
+  Landmark,
+  BookOpen,
+  Play,
+  Flame,
+  Volume2,
+  Clock,
+  Radio,
+  BarChart3,
+  MoreHorizontal,
+  X,
+  LogOut,
 } from 'lucide-react';
-import { createInitialGameState } from '@hexara/game-core';
+import { createInitialGameState, ResourceType } from '@hexara/game-core';
 import { useGameStore } from '../../store/gameStore';
 import { ScoreboardModal } from './ScoreboardModal';
 import { EmojiModal, EmojiReaction } from './EmojiModal';
@@ -26,13 +44,19 @@ import { AlmanacModal } from './AlmanacModal';
 import { SettingsModal, DEFAULT_SETTINGS, GameSettingsState } from './SettingsModal';
 import { PlayerRibbonCard } from './PlayerRibbonCard';
 import { DiceDisplay } from './DiceDisplay';
-import { LeftToolbar } from './LeftToolbar';
 import { FullscreenButton } from '../common/FullscreenButton';
 import { DevCardPanel, DevCardParams } from './DevCardPanel';
 import { TurnTimer } from './TurnTimer';
 import { VoiceChatControls } from './VoiceChatControls';
 import { ResourceFlyAnimation } from './ResourceFlyAnimation';
+import { RightSidebarWidget } from './RightSidebarWidget';
+import { MobileBottomSheet } from './MobileBottomSheet';
+import { ProfileModal } from '../modals/ProfileModal';
+import { zoomInCamera, zoomOutCamera, resetGameCamera } from '../../game/GameCanvas';
 import type { Socket } from 'socket.io-client';
+import { CLIENT_EVENTS } from '@hexara/protocol';
+import { soundManager } from '../../game/SoundManager';
+import { UserProfile } from '../modals/AuthModal';
 
 interface GameHUDProps {
   socket?: Socket | null;
@@ -43,6 +67,8 @@ interface GameHUDProps {
   onResetCamera?: () => void;
   onConfirmPlacement?: () => void;
   onPlayDevCard?: (card: string, params?: DevCardParams) => void;
+  turnDeadline?: number;
+  connectionStatus?: 'connected' | 'reconnecting' | 'disconnected';
 }
 
 export const GameHUD: React.FC<GameHUDProps> = ({
@@ -54,6 +80,8 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onResetCamera,
   onConfirmPlacement,
   onPlayDevCard,
+  turnDeadline,
+  connectionStatus = 'connected',
 }) => {
   const {
     gameState,
@@ -62,18 +90,24 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     cameraMode,
     toggleCameraMode,
     setBuildMode,
+    isBuildModalOpen,
     setBuildModalOpen,
+    isTradeModalOpen,
     setTradeModalOpen,
     errorToast,
   } = useGameStore();
 
-  // Modal Open States
+  // Modals Open State
   const [isScoreboardOpen, setScoreboardOpen] = useState(false);
   const [isEmojiOpen, setEmojiOpen] = useState(false);
   const [isChatLogOpen, setChatLogOpen] = useState(false);
   const [isAlmanacOpen, setAlmanacOpen] = useState(false);
   const [isSettingsOpen, setSettingsOpen] = useState(false);
   const [isDevCardPanelOpen, setDevCardPanelOpen] = useState(false);
+  const [isBottomSheetOpen, setBottomSheetOpen] = useState(false);
+  const [isProfileOpen, setProfileOpen] = useState(false);
+  const [leftDrawer, setLeftDrawer] = useState<'none' | 'chat_log' | 'stats'>('none');
+  const [isMenuExpanded, setMenuExpanded] = useState(false);
 
   // Match Info from sessionStorage
   const scenarioName = typeof window !== 'undefined' ? sessionStorage.getItem('hexara_scenario_name') || 'The First Island' : 'The First Island';
@@ -84,10 +118,43 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
   const handleCopyRoom = () => {
     if (!roomCode) return;
+    soundManager.playClick();
     navigator.clipboard.writeText(roomCode);
     setCopiedRoomCode(true);
     setTimeout(() => setCopiedRoomCode(false), 2000);
   };
+
+  // Local User Profile
+  const [userProfile, setUserProfile] = useState<UserProfile>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('hexara_user_profile');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {}
+      }
+      return {
+        id: localStorage.getItem('hexara_player_id') || 'local_player',
+        username: localStorage.getItem('hexara_username') || 'Ram',
+        avatar: localStorage.getItem('hexara_avatar') || '🧙',
+        level: 1,
+        xp: 150,
+        gamesPlayed: 1,
+        wins: 0,
+        totalVictoryPoints: 8,
+      };
+    }
+    return {
+      id: 'local_player',
+      username: 'Ram',
+      avatar: '🧙',
+      level: 1,
+      xp: 150,
+      gamesPlayed: 1,
+      wins: 0,
+      totalVictoryPoints: 8,
+    };
+  });
 
   // Settings State
   const [settings, setSettings] = useState<GameSettingsState>(DEFAULT_SETTINGS);
@@ -98,7 +165,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   // Floating Player Reactions
   const [playerReactions, setPlayerReactions] = useState<Record<string, string>>({});
 
-  // Chat messages
+  // Internal chat fallback
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: '1',
@@ -164,7 +231,6 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const isRobberSteal = gameState.phase === 'ROBBER_STEAL' && isMyTurn;
 
   // Phase instruction text
-  type SetupPhase = 'SETUP_ROUND_1' | 'SETUP_ROUND_2';
   const getPhaseInstruction = (): string | null => {
     if (!isMyTurn) return null;
     const p = localPlayer;
@@ -184,9 +250,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const phaseInstruction = getPhaseInstruction();
 
   const handleLeaveMatch = () => {
-    if (confirm('Are you sure you want to return to the Main Menu?')) {
-      window.location.hash = '#/';
+    soundManager.playClick();
+    if (matchMode === 'online' && socket && roomCode) {
+      socket.emit(CLIENT_EVENTS.LEAVE_GAME, { code: roomCode });
     }
+    sessionStorage.removeItem('hexara_active_game_state');
+    sessionStorage.removeItem('hexara_room_code');
+    window.location.hash = '#/';
   };
 
   const handleSelectEmoji = (reaction: EmojiReaction) => {
@@ -220,26 +290,231 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
   const activeChatList = externalChatMessages || chatMessages;
 
+  // Global Keyboard Shortcuts (Section 31)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA'].includes(target?.tagName)) return;
+
+      if (e.code === 'Space') {
+        if (canRoll) {
+          e.preventDefault();
+          onRollDice?.();
+        }
+      } else if (e.code === 'KeyE') {
+        if (canEndTurn) {
+          e.preventDefault();
+          onEndTurn?.();
+        }
+      } else if (e.code === 'KeyB') {
+        e.preventDefault();
+        setBuildModalOpen(!isBuildModalOpen);
+      } else if (e.code === 'KeyT') {
+        e.preventDefault();
+        setTradeModalOpen(!isTradeModalOpen);
+      } else if (e.code === 'KeyC') {
+        e.preventDefault();
+        setDevCardPanelOpen((prev) => !prev);
+      } else if (e.code === 'KeyM') {
+        e.preventDefault();
+        setMenuExpanded((prev) => !prev);
+      } else if (e.code === 'Escape') {
+        e.preventDefault();
+        if (buildMode !== 'none') {
+          useGameStore.getState().setSelectedVertexId(null);
+          useGameStore.getState().setSelectedEdgeId(null);
+          setBuildMode('none');
+        } else {
+          setBuildModalOpen(false);
+          setTradeModalOpen(false);
+          setDevCardPanelOpen(false);
+          setLeftDrawer('none');
+          setSettingsOpen(false);
+          setAlmanacOpen(false);
+          setMenuExpanded(false);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canRoll, canEndTurn, isBuildModalOpen, isTradeModalOpen, buildMode, onRollDice, onEndTurn, setBuildMode, setBuildModalOpen, setTradeModalOpen]);
+
+  const themeConfigs = [
+    { color: '#dc2626', avatar: '🧔' }, // Red (Silver/Candamir)
+    { color: '#2563eb', avatar: '🏹' }, // Blue (Drake/Doomsday)
+    { color: '#d97706', avatar: '🦙' }, // Yellow/Amber
+    { color: '#059669', avatar: '👑' }, // Green (William)
+  ];
+
   return (
-    <div className="pointer-events-none fixed inset-0 z-30 flex flex-col justify-between p-3 select-none">
+    <div className="pointer-events-none fixed inset-0 z-30 flex flex-col justify-between p-2 sm:p-3 select-none overflow-hidden font-sans">
       {/* ============================================================ */}
-      {/* 1. Header: Top Player Ribbons & Match Info / Camera Controls */}
+      {/* 1. TOP HEADER BAR: DESKTOP & MOBILE ADAPTIVE                 */}
       {/* ============================================================ */}
-      <header className="flex items-start justify-between w-full pt-1">
-        {/* Player Banner List matching Reference Images 4, 8 */}
-        <div className="pointer-events-auto flex items-start gap-3 md:gap-4 overflow-x-auto pb-2 max-w-[70vw]">
+
+      {/* ============================================================ */}
+      {/* 1. TOP HEADER BAR: BRAND, COMPACT PLAYER CARDS, TIMER & DICE */}
+      {/* ============================================================ */}
+      <header className="pointer-events-none flex flex-col w-full px-2 sm:px-4 pt-2 gap-1.5 z-30 shrink-0">
+        {/* Main Top Bar Row */}
+        <div className="flex items-center justify-between w-full gap-2">
+          {/* Left: Brand / Room Code Badge */}
+          <div className="pointer-events-auto flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#2e1208]/95 to-[#160803]/95 border border-amber-600/50 shadow-lg backdrop-blur-md">
+              <span className="text-base">🏔️</span>
+              <span className="hidden sm:inline text-xs font-black uppercase font-serif tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200">
+                ISLES OF HEXARA
+              </span>
+              {roomCode && (
+                <button
+                  onClick={handleCopyRoom}
+                  className="flex items-center gap-1 ml-1 px-2 py-0.5 rounded-lg bg-black/60 hover:bg-black/90 border border-amber-600/40 text-amber-300 font-mono text-[11px] font-bold transition-all active:scale-95"
+                  title="Click to copy room code"
+                >
+                  <span>#{roomCode}</span>
+                  {copiedRoomCode ? (
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-3 h-3 text-amber-400/80" />
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Center: Compact Player Cards distributed horizontally across top (Desktop & Tablet) */}
+          <div className="pointer-events-auto hidden md:flex items-center gap-2 overflow-x-auto custom-scrollbar px-1 py-0.5">
+            {gameState.playerOrder.map((pId, idx) => {
+              const player = gameState.players[pId];
+              if (!player) return null;
+              const isActive = pId === activePlayerId;
+              const isMe = pId === localPlayerId;
+              const theme = themeConfigs[idx % themeConfigs.length];
+
+              return (
+                <div key={pId} className="relative flex flex-col items-center">
+                  <PlayerRibbonCard
+                    player={player}
+                    isActive={isActive}
+                    isLocal={isMe}
+                    themeColor={theme.color}
+                    avatarIcon={theme.avatar}
+                    layout="catan-top"
+                  />
+                  {/* Active Player Dice Display directly beneath active card */}
+                  {isActive && gameState.dice?.rolled && gameState.dice.total > 0 && (
+                    <div className="absolute -bottom-7.5 z-30 animate-in fade-in zoom-in-90 duration-200 filter drop-shadow-lg">
+                      <div className="flex items-center gap-1 bg-black/85 px-1.5 py-0.5 rounded-lg border border-amber-500/50 shadow-xl">
+                        <DiceDisplay
+                          dice1={gameState.dice.dice1}
+                          dice2={gameState.dice.dice2}
+                          total={gameState.dice.total}
+                          canRoll={false}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Right: Authoritative Turn Timer, Voice, Camera & Settings controls */}
+          <div className="pointer-events-auto flex items-center gap-1.5">
+            {/* Authoritative Server Turn Timer Countdown */}
+            <TurnTimer
+              isActive={gameState.phase !== 'FINISHED'}
+              isMyTurn={isMyTurn}
+              turnKey={`${gameState.currentPlayerIndex}_${gameState.turnNumber}_${gameState.phase}`}
+              turnDeadline={turnDeadline}
+              durationSeconds={Number(sessionStorage.getItem('hexara_turn_duration') || 60)}
+              onTimeout={() => {
+                if (canRoll) onRollDice?.();
+                else if (canEndTurn) onEndTurn?.();
+              }}
+            />
+
+            {/* Voice Chat Button */}
+            {matchMode === 'online' && roomCode && (
+              <VoiceChatControls
+                roomCode={roomCode}
+                socket={socket}
+                localPlayerId={localPlayerId}
+                username={localPlayer?.username}
+              />
+            )}
+
+            {/* Camera Zoom & Tactical Controls */}
+            <div className="hidden sm:flex items-center gap-0.5 bg-black/60 p-0.5 rounded-xl border border-amber-600/40">
+              <button
+                onClick={() => zoomInCamera()}
+                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95"
+                title="Zoom In"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => zoomOutCamera()}
+                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95"
+                title="Zoom Out"
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => resetGameCamera()}
+                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95"
+                title="Recenter Camera"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={toggleCameraMode}
+                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95"
+                title="Toggle 3D / Tactical View"
+              >
+                <Eye className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Settings button */}
+            <button
+              onClick={() => {
+                soundManager.playClick();
+                setSettingsOpen(true);
+              }}
+              title="Audio & Match Settings"
+              className="w-8 h-8 rounded-xl bg-black/60 hover:bg-black/80 border border-amber-600/40 text-amber-300 hover:text-white flex items-center justify-center transition-all shadow active:scale-95"
+            >
+              <SettingsIcon className="w-4 h-4" />
+            </button>
+
+            {/* Profile Avatar Pill */}
+            <button
+              onClick={() => {
+                soundManager.playClick();
+                setProfileOpen(true);
+              }}
+              className="hidden sm:flex items-center gap-1.5 pl-1 pr-2.5 py-0.5 rounded-xl bg-black/60 border border-amber-500/50 hover:border-amber-400 text-amber-100 hover:scale-105 active:scale-95 transition-all shadow"
+              title="Captain Profile"
+            >
+              <div className="w-6 h-6 rounded-full bg-amber-900/60 border border-amber-400 flex items-center justify-center text-xs shadow">
+                {userProfile.avatar}
+              </div>
+              <span className="text-xs font-black font-serif text-amber-200 truncate max-w-[70px]">
+                {userProfile.username}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Horizontal Player Ribbon (visible on small mobile screens < 768px) */}
+        <div className="pointer-events-auto md:hidden flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar w-full">
           {gameState.playerOrder.map((pId, idx) => {
             const player = gameState.players[pId];
             if (!player) return null;
             const isActive = pId === activePlayerId;
             const isMe = pId === localPlayerId;
-
-            const themeConfigs = [
-              { color: '#dc2626', avatar: '🧔' }, // Red (Silver/Candamir)
-              { color: '#2563eb', avatar: '🏹' }, // Blue (Drake/Doomsday)
-              { color: '#d97706', avatar: '🦙' }, // Yellow/Amber
-              { color: '#059669', avatar: '👑' }, // Green (William)
-            ];
             const theme = themeConfigs[idx % themeConfigs.length];
 
             return (
@@ -250,133 +525,235 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 isLocal={isMe}
                 themeColor={theme.color}
                 avatarIcon={theme.avatar}
-                reactionEmoji={playerReactions[pId]}
+                layout="catan-top"
               />
             );
           })}
         </div>
-
-        {/* Top-Right Action Controls (Active Scenario Badge, Online Room Code, Camera Switchers) */}
-        <div className="pointer-events-auto flex items-center gap-2">
-          {/* Online Live Room Badge with One-Click Copy */}
-          {matchMode === 'online' && roomCode && (
-            <button
-              onClick={handleCopyRoom}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border-2 border-blue-400/70 bg-gradient-to-r from-blue-950/90 to-black/90 backdrop-blur-md shadow-lg hover:border-blue-300 hover:scale-105 active:scale-95 transition-all text-left group"
-              title="Click to copy room code"
-            >
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <div className="flex flex-col">
-                <span className="text-[8px] uppercase font-mono font-bold text-blue-300 tracking-wider">
-                  Room Code
-                </span>
-                <span className="text-xs font-black font-mono text-amber-300 tracking-wider">
-                  {roomCode}
-                </span>
-              </div>
-              <div className="ml-1 p-1 rounded bg-blue-500/20 text-blue-300 group-hover:text-white transition-colors">
-                {copiedRoomCode ? (
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5" />
-                )}
-              </div>
-            </button>
-          )}
-
-          {/* Voice Chat Controls — available in online rooms or local */}
-          {matchMode === 'online' && roomCode && (
-            <VoiceChatControls
-              roomCode={roomCode}
-              socket={socket}
-              localPlayerId={localPlayerId}
-              username={localPlayer?.username}
-            />
-          )}
-
-          {/* Active Scenario Badge (Locked Match Rules) */}
-          <div className="hidden md:flex flex-col items-end px-3 py-1.5 rounded-xl border border-amber-500/40 bg-black/60 backdrop-blur-md shadow-lg">
-            <span className="text-[10px] uppercase font-mono font-bold text-amber-300">
-              {scenarioName}
-            </span>
-            <span className="text-[9px] font-black text-amber-400/80 font-serif">
-              Goal: {vpTarget} VP Target
-            </span>
-          </div>
-
-          {/* Turn Timer */}
-          <TurnTimer
-            isActive={gameState.phase === 'MAIN' || gameState.phase === 'ROLLING'}
-            isMyTurn={isMyTurn}
-            turnKey={`${gameState.currentPlayerIndex}_${gameState.turnNumber}`}
-            onTimeout={() => {
-              if (canRoll) onRollDice?.();
-              else if (canEndTurn) onEndTurn?.();
-            }}
-          />
-
-          {/* Fullscreen App Mode Toggle */}
-          <FullscreenButton />
-
-          {/* Camera View Mode Switcher */}
-          <button
-            onClick={toggleCameraMode}
-            title={cameraMode === 'perspective' ? 'Switch to Overhead Tactical View' : 'Switch to 3D Angled View'}
-            className="w-10 h-10 rounded-xl border-2 border-amber-400/80 bg-gradient-to-b from-[#451a03] to-[#200c02] text-amber-300 shadow-xl flex items-center justify-center hover:border-amber-300 hover:text-amber-100 hover:scale-105 active:scale-95 transition-all"
-          >
-            <Eye className="w-5 h-5 text-amber-400" />
-          </button>
-
-          {/* Camera Reset */}
-          {onResetCamera && (
-            <button
-              onClick={onResetCamera}
-              title="Reset Camera Position"
-              className="w-10 h-10 rounded-xl border-2 border-amber-400/80 bg-gradient-to-b from-[#451a03] to-[#200c02] text-amber-300 shadow-xl flex items-center justify-center hover:border-amber-300 hover:text-amber-100 hover:scale-105 active:scale-95 transition-all"
-            >
-              <RotateCcw className="w-4 h-4 text-amber-400" />
-            </button>
-          )}
-        </div>
       </header>
 
       {/* ============================================================ */}
-      {/* 2. Middle Body: Left Toolbar, Placement Guides & Turn Banner */}
+      {/* 2. MIDDLE AREA: LEFT SECONDARY CONTROLS & FOCAL BOARD        */}
       {/* ============================================================ */}
-      <div className="relative flex-1 flex items-center justify-between w-full pointer-events-none">
-        {/* Left Vertical Tool Rail (Images 5, 12, 13, 14, 15, 16) */}
-        <LeftToolbar
-          onOpenMessages={() => setChatLogOpen(true)}
-          onOpenAlmanac={() => setAlmanacOpen(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
-          onOpenScoreboard={() => setScoreboardOpen(true)}
-          onOpenEmoji={() => setEmojiOpen(true)}
-          onLeaveMatch={handleLeaveMatch}
-        />
+      <div className="relative flex-1 flex items-stretch justify-between w-full overflow-hidden pointer-events-none">
+        {/* Left Secondary Controls Sidebar (Desktop) matching Screenshot_20260911-144416 */}
+        <div className="pointer-events-auto hidden md:flex items-start gap-2 z-20 pl-2 pt-2">
+          {!isMenuExpanded ? (
+            /* Collapsed Menu Rail: Single Main Menu Icon */
+            <button
+              onClick={() => {
+                soundManager.playClick();
+                setMenuExpanded(true);
+              }}
+              className="w-11 h-11 rounded-2xl bg-[#24130c]/95 hover:bg-[#381a10] border-2 border-amber-600/70 hover:border-amber-400 text-amber-300 hover:text-white flex items-center justify-center transition-all shadow-[0_4px_15px_rgba(0,0,0,0.8)] active:scale-95 cursor-pointer"
+              title="Expand Game Menu (M)"
+            >
+              <Menu className="w-5 h-5 stroke-[2.5]" />
+            </button>
+          ) : (
+            /* Expanded Menu Rail: Icons + Labels with Smooth Overlay */
+            <div className="flex flex-col gap-1.5 p-2.5 rounded-2xl bg-[#24130c]/95 border-2 border-amber-600/60 shadow-[0_10px_35px_rgba(0,0,0,0.9)] backdrop-blur-md animate-in slide-in-from-left-2 duration-150 min-w-[200px]">
+              {/* Close / Collapse Button */}
+              <button
+                onClick={() => {
+                  soundManager.playClick();
+                  setMenuExpanded(false);
+                  setLeftDrawer('none');
+                }}
+                className="flex items-center justify-between px-3 py-2 rounded-xl bg-black/50 hover:bg-black/80 border border-amber-600/40 text-amber-200/80 hover:text-white text-xs font-bold transition-all cursor-pointer mb-1"
+                title="Collapse Menu (M or Esc)"
+              >
+                <div className="flex items-center gap-2">
+                  <X className="w-4 h-4 text-amber-400" />
+                  <span className="font-serif uppercase tracking-wider text-[11px]">Collapse Menu</span>
+                </div>
+                <span className="text-[10px] font-mono opacity-50">M</span>
+              </button>
 
-        {/* Center Indicators (Turn Banner / Placement Guides) */}
-        <div className="flex flex-col items-center gap-2 mx-auto">
-          {/* Turn Banner matching Reference Image 5 */}
+              {/* Chat & Game Log */}
+              <button
+                onClick={() => {
+                  soundManager.playClick();
+                  setLeftDrawer((prev) => (prev === 'chat_log' ? 'none' : 'chat_log'));
+                }}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  leftDrawer === 'chat_log'
+                    ? 'catan-btn-gold shadow text-slate-950 font-black'
+                    : 'bg-black/40 hover:bg-amber-900/40 border border-amber-600/30 text-amber-200 hover:text-white'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4 text-amber-400" />
+                <span>Crew Chat & Log</span>
+              </button>
+
+              {/* Development Cards */}
+              <button
+                onClick={() => {
+                  soundManager.playClick();
+                  setDevCardPanelOpen(true);
+                }}
+                className="flex items-center justify-between px-3 py-2 rounded-xl bg-black/40 hover:bg-amber-900/40 border border-amber-600/30 text-purple-200 hover:text-white text-xs font-bold transition-all cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5">
+                  <Scroll className="w-4 h-4 text-purple-400" />
+                  <span>My Dev Cards</span>
+                </div>
+                {(localPlayer?.devCards?.length ?? 0) > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full bg-purple-600 text-white font-mono text-[10px] font-black">
+                    {localPlayer?.devCards?.length}
+                  </span>
+                )}
+              </button>
+
+              {/* Trade */}
+              <button
+                onClick={() => {
+                  soundManager.playClick();
+                  setTradeModalOpen(true);
+                }}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-black/40 hover:bg-amber-900/40 border border-amber-600/30 text-amber-200 hover:text-white text-xs font-bold transition-all cursor-pointer"
+              >
+                <Ship className="w-4 h-4 text-amber-400" />
+                <span>Trading House</span>
+              </button>
+
+              {/* Dice Statistics */}
+              <button
+                onClick={() => {
+                  soundManager.playClick();
+                  setLeftDrawer((prev) => (prev === 'stats' ? 'none' : 'stats'));
+                }}
+                className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  leftDrawer === 'stats'
+                    ? 'catan-btn-gold shadow text-slate-950 font-black'
+                    : 'bg-black/40 hover:bg-amber-900/40 border border-amber-600/30 text-amber-200 hover:text-white'
+                }`}
+              >
+                <BarChart3 className="w-4 h-4 text-amber-400" />
+                <span>Dice Statistics</span>
+              </button>
+
+              {/* Rules / Almanac */}
+              <button
+                onClick={() => {
+                  soundManager.playClick();
+                  setAlmanacOpen(true);
+                }}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-black/40 hover:bg-amber-900/40 border border-amber-600/30 text-blue-200 hover:text-white text-xs font-bold transition-all cursor-pointer"
+              >
+                <BookOpen className="w-4 h-4 text-blue-400" />
+                <span>Rules & Harbors</span>
+              </button>
+
+              {/* Settings */}
+              <button
+                onClick={() => {
+                  soundManager.playClick();
+                  setSettingsOpen(true);
+                }}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-black/40 hover:bg-amber-900/40 border border-amber-600/30 text-stone-300 hover:text-white text-xs font-bold transition-all cursor-pointer"
+              >
+                <SettingsIcon className="w-4 h-4 text-stone-400" />
+                <span>Audio & Settings</span>
+              </button>
+
+              {/* Emotes */}
+              <button
+                onClick={() => {
+                  soundManager.playClick();
+                  setEmojiOpen(true);
+                }}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-xl bg-black/40 hover:bg-amber-900/40 border border-amber-600/30 text-amber-200 hover:text-white text-xs font-bold transition-all cursor-pointer"
+              >
+                <span className="text-base">😀</span>
+                <span>Reactions</span>
+              </button>
+
+              {/* Leave Game */}
+              <div className="pt-1 mt-1 border-t border-amber-900/50">
+                <button
+                  onClick={handleLeaveMatch}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl bg-red-950/40 hover:bg-red-900/60 border border-red-800/40 text-red-300 hover:text-white text-xs font-bold transition-all cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4 text-red-400" />
+                  <span>Leave Voyage</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Slide-out Left Drawer Panel */}
+          {leftDrawer === 'chat_log' && (
+            <div className="animate-in slide-in-from-left duration-200">
+              <RightSidebarWidget
+                logs={gameState.logs || []}
+                chatMessages={activeChatList}
+                onSendMessage={handleSendMessage}
+              />
+            </div>
+          )}
+
+          {leftDrawer === 'stats' && (
+            <div className="w-72 p-4 rounded-2xl bg-gradient-to-b from-[#24130c]/95 via-[#180b06]/95 to-[#0d0603]/95 border-2 border-amber-600/50 shadow-2xl backdrop-blur-md animate-in slide-in-from-left duration-200 flex flex-col gap-3">
+              <div className="flex items-center justify-between border-b border-amber-900/40 pb-2">
+                <span className="text-xs font-black uppercase text-amber-300 font-serif tracking-wider">
+                  📊 Dice Distribution
+                </span>
+                <button
+                  onClick={() => setLeftDrawer('none')}
+                  className="text-stone-400 hover:text-white text-xs font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="space-y-1.5 text-xs font-mono">
+                {[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((num) => {
+                  const count = diceHistory.filter((d) => d === num).length;
+                  const pct = diceHistory.length > 0 ? (count / diceHistory.length) * 100 : 0;
+                  const isLucky = num === 6 || num === 8;
+                  return (
+                    <div key={num} className="flex items-center gap-2">
+                      <span className={`w-5 text-right font-black ${isLucky ? 'text-red-400' : 'text-amber-200'}`}>
+                        {num}
+                      </span>
+                      <div className="flex-1 h-3.5 bg-black/60 rounded overflow-hidden border border-white/10">
+                        <div
+                          className={`h-full ${isLucky ? 'bg-red-500' : 'bg-amber-500'}`}
+                          style={{ width: `${Math.max(5, pct)}%` }}
+                        />
+                      </div>
+                      <span className="w-8 text-[10px] text-stone-400 text-right">{count}x</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Center Area: Central Floating Turn Guidance & Banners */}
+        <div className="flex-1 relative flex flex-col items-center justify-start pt-2 px-4 pointer-events-none">
+          {/* Active Turn Banner */}
           {showTurnBanner && (
             <div
-              className={`px-8 py-2.5 rounded-2xl border-2 flex items-center gap-3 shadow-[0_0_30px_rgba(0,0,0,0.8)] backdrop-blur-md transition-all duration-300 animate-in fade-in zoom-in-95 ${
+              className={`pointer-events-auto px-6 py-2 rounded-2xl border-2 flex items-center gap-2.5 shadow-[0_0_30px_rgba(0,0,0,0.8)] backdrop-blur-md transition-all animate-in fade-in zoom-in-95 ${
                 turnBannerText.isMe
                   ? 'bg-gradient-to-r from-[#7f1d1d] via-[#991b1b] to-[#7f1d1d] border-amber-400 text-amber-100 shadow-[0_0_25px_rgba(239,68,68,0.5)]'
                   : 'bg-gradient-to-r from-[#1c1917] via-[#292524] to-[#1c1917] border-stone-600 text-stone-200'
               }`}
             >
-              <Sparkles className="w-5 h-5 text-amber-400 animate-spin" />
-              <span className="text-base font-black tracking-wide font-serif">
+              <Sparkles className="w-4 h-4 text-amber-400 animate-spin" />
+              <span className="text-sm font-black tracking-wide font-serif">
                 {turnBannerText.name}
               </span>
             </div>
           )}
 
-          {/* Active Placement Guide Text matching Reference Images 6 & 7 */}
+          {/* Active Placement Guide Text */}
           {buildMode !== 'none' && (
-            <div className="pointer-events-auto px-6 py-2 rounded-xl border-2 border-amber-400 flex items-center gap-4 bg-gradient-to-r from-[#3a1212] via-[#240a0a] to-[#3a1212] shadow-[0_0_25px_rgba(245,158,11,0.6)]">
-              <span className="text-sm font-black text-amber-200 font-serif">
-                Select position for {buildMode === 'road' ? 'Road' : buildMode === 'settlement' ? 'Settlement' : 'City'}
+            <div className="pointer-events-auto mt-2 px-5 py-1.5 rounded-xl border-2 border-amber-400 flex items-center gap-3 bg-gradient-to-r from-[#3a1212] via-[#240a0a] to-[#3a1212] shadow-[0_0_25px_rgba(245,158,11,0.6)]">
+              <span className="text-xs font-black text-amber-200 font-serif">
+                Select position on board for {buildMode === 'road' ? 'Road' : buildMode === 'settlement' ? 'Settlement' : 'City'}
               </span>
               <button
                 onClick={() => setBuildMode('none')}
@@ -387,258 +764,212 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </div>
           )}
 
-          {/* Phase-specific instruction ribbon */}
+          {/* Phase instruction */}
           {buildMode === 'none' && phaseInstruction && (
-            <div className="pointer-events-none px-6 py-1.5 rounded-xl border border-amber-500/40 bg-black/60 backdrop-blur-md flex items-center gap-2 shadow-lg">
-              <span className="text-xs font-bold text-amber-200">{phaseInstruction}</span>
+            <div className="pointer-events-none mt-2 px-4 py-1 rounded-xl border border-amber-500/40 bg-black/70 backdrop-blur-md flex items-center gap-1.5 shadow-lg">
+              <span className="text-[11px] font-bold text-amber-200">{phaseInstruction}</span>
             </div>
           )}
 
-          {/* ROBBER DISCARD Banner */}
+          {/* Robber Discard & Move Banners */}
           {isRobberDiscard && (
-            <div className="pointer-events-none px-6 py-2 rounded-xl border-2 border-red-500 bg-red-950/90 backdrop-blur-md flex items-center gap-2 shadow-[0_0_20px_rgba(220,38,38,0.7)] animate-pulse">
-              <span className="text-sm font-black text-red-200">⚠️ Discard {myPendingDiscard} card{myPendingDiscard !== 1 ? 's' : ''} — check the discard dialog</span>
+            <div className="pointer-events-none mt-2 px-5 py-1.5 rounded-xl border-2 border-red-500 bg-red-950/90 backdrop-blur-md flex items-center gap-2 shadow-[0_0_20px_rgba(220,38,38,0.7)] animate-pulse">
+              <span className="text-xs font-black text-red-200">⚠️ Discard {myPendingDiscard} card{myPendingDiscard !== 1 ? 's' : ''}</span>
             </div>
           )}
-
-          {/* ROBBER MOVE Banner */}
           {isRobberMove && buildMode === 'none' && (
-            <div className="pointer-events-none px-6 py-2.5 rounded-xl border-2 border-amber-500 bg-amber-950/90 backdrop-blur-md flex items-center gap-2.5 shadow-[0_0_20px_rgba(245,158,11,0.7)] animate-pulse">
-              <span className="text-lg">🔴</span>
-              <span className="text-sm font-black text-amber-200">Move the Robber — Click a highlighted hex</span>
+            <div className="pointer-events-none mt-2 px-5 py-1.5 rounded-xl border-2 border-amber-500 bg-amber-950/90 backdrop-blur-md flex items-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.7)] animate-pulse">
+              <span className="text-xs font-black text-amber-200">🔴 Move the Robber — Click any fertile hex</span>
             </div>
           )}
-
-          {/* ROBBER STEAL Banner */}
           {isRobberSteal && (
-            <div className="pointer-events-none px-6 py-2 rounded-xl border-2 border-purple-500 bg-purple-950/90 backdrop-blur-md flex items-center gap-2 shadow-[0_0_20px_rgba(147,51,234,0.7)] animate-pulse">
-              <span className="text-lg">💀</span>
-              <span className="text-sm font-black text-purple-200">Choose a player to steal from</span>
-            </div>
-          )}
-
-          {errorToast && (
-            <div className="px-5 py-2 rounded-xl border border-red-500 bg-red-950/95 text-red-200 text-xs font-bold shadow-2xl">
-              {errorToast}
+            <div className="pointer-events-none mt-2 px-5 py-1.5 rounded-xl border-2 border-purple-500 bg-purple-950/90 backdrop-blur-md flex items-center gap-2 shadow-[0_0_20px_rgba(147,51,234,0.7)] animate-pulse">
+              <span className="text-xs font-black text-purple-200">💀 Choose a victim to plunder from</span>
             </div>
           )}
         </div>
-
-        {/* Left Piece Supply Box during Placement (Offset so it NEVER overlaps LeftToolbar) */}
-        {buildMode !== 'none' && localPlayer && (
-          <div className="pointer-events-auto absolute left-16 md:left-20 top-1/2 -translate-y-1/2 bg-gradient-to-r from-black/95 to-black/80 border-2 border-amber-600/80 rounded-2xl p-3.5 shadow-2xl flex items-center gap-3 animate-in slide-in-from-left-4 backdrop-blur-md z-20">
-            <div className="flex flex-col items-center">
-              <div
-                className="w-14 h-12 rounded-xl flex items-center justify-center shadow-lg border border-white/20"
-                style={{ backgroundColor: localPlayer.color || '#dc2626' }}
-              >
-                <span className="text-2xl drop-shadow-md">
-                  {buildMode === 'road' ? '🪵' : buildMode === 'settlement' ? '🏠' : '🏰'}
-                </span>
-              </div>
-              <span className="text-xs font-mono font-black text-amber-200 mt-1.5 drop-shadow">
-                {buildMode === 'road'
-                  ? `${localPlayer.roadsRemaining}/15`
-                  : buildMode === 'settlement'
-                  ? `${localPlayer.settlementsRemaining}/5`
-                  : `${localPlayer.citiesRemaining}/4`}
-              </span>
-            </div>
-            {/* Small red/gold pointer tab pointing toward board */}
-            <div className="w-0 h-0 border-t-8 border-t-transparent border-b-8 border-b-transparent border-l-8 border-l-amber-500 animate-pulse" />
-          </div>
-        )}
       </div>
 
       {/* ============================================================ */}
-      {/* 3. Footer: Resources Inventory Dock & Action Controls */}
+      {/* 3. BOTTOM CONTROLS: COMPACT RESOURCES & PROMINENT ACTIONS   */}
       {/* ============================================================ */}
-      <footer className="flex items-end justify-between w-full gap-3 pb-1">
-        {/* Left supply breakdown */}
-        <div className="pointer-events-auto flex items-center">
-          {localPlayer && (
-            <div className="hidden lg:flex items-center gap-2 bg-[#20130b]/95 px-3.5 py-1.5 rounded-2xl border border-amber-600/40 text-xs font-bold text-amber-200 shadow-xl">
-              <span className="text-[10px] uppercase font-black text-amber-400/80 mr-0.5">Supply:</span>
-              <span title="Roads Remaining">🛣️ {localPlayer.roadsRemaining}</span>
-              <span className="text-amber-700">&bull;</span>
-              <span title="Settlements Remaining">🏠 {localPlayer.settlementsRemaining}</span>
-              <span className="text-amber-700">&bull;</span>
-              <span title="Cities Remaining">🏰 {localPlayer.citiesRemaining}</span>
-            </div>
-          )}
+      <footer className="pointer-events-none flex items-end justify-between w-full px-2 sm:px-4 pb-2 sm:pb-3 gap-2 z-30 shrink-0">
+        {/* Left: Mobile Menu / Info Button matching Screenshot_20260911-144413 */}
+        <div className="pointer-events-auto flex items-center gap-2">
+          {/* Mobile hamburger button */}
+          <button
+            onClick={() => {
+              soundManager.playClick();
+              setBottomSheetOpen(true);
+            }}
+            className="md:hidden w-11 h-11 rounded-xl bg-gradient-to-b from-[#d97706] to-[#b45309] border-2 border-amber-200 text-slate-950 flex items-center justify-center shadow-xl active:scale-95"
+            title="Open Menu"
+          >
+            <Menu className="w-6 h-6 stroke-[2.5]" />
+          </button>
+
+          {/* Info / Almanac button */}
+          <button
+            onClick={() => {
+              soundManager.playClick();
+              setAlmanacOpen(true);
+            }}
+            className="w-10 h-10 rounded-xl bg-black/70 hover:bg-black/90 border border-amber-600/50 text-amber-300 flex items-center justify-center shadow-lg transition-all active:scale-95"
+            title="Almanac & Building Costs"
+          >
+            <HelpCircle className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Bottom Center: Resource Inventory Dock (Matching Screenshot) */}
+        {/* Center: Compact Resource Bar matching Screenshot_20260911-144413 */}
         {localPlayer && (
-          <div className="pointer-events-auto bg-gradient-to-b from-[#3a1d12] via-[#24130c] to-[#140a06] rounded-2xl px-5 py-2.5 flex items-center gap-4 md:gap-6 shadow-[0_10px_30px_rgba(0,0,0,0.8)] border-2 border-[#8b4513]/70">
-            {/* Lumber */}
-            <div className="flex items-center gap-1.5 text-amber-100" title="Lumber">
-              <span className="text-xl">🪵</span>
-              <span className="text-base font-black font-mono">{localPlayer.resources.lumber}</span>
+          <div className="pointer-events-auto bg-gradient-to-b from-[#3a1d12] via-[#24130c] to-[#140a06] rounded-2xl px-3 sm:px-5 py-2 flex items-center gap-3 sm:gap-5 shadow-[0_10px_30px_rgba(0,0,0,0.85)] border-2 border-[#8b4513]/80">
+            <div className="flex items-center gap-1 text-amber-100" title="Lumber">
+              <span className="text-base sm:text-xl">🪵</span>
+              <span className="text-sm sm:text-base font-black font-mono">{localPlayer.resources.lumber}</span>
             </div>
-
-            {/* Brick */}
-            <div className="flex items-center gap-1.5 text-amber-100" title="Brick">
-              <span className="text-xl">🧱</span>
-              <span className="text-base font-black font-mono">{localPlayer.resources.brick}</span>
+            <div className="flex items-center gap-1 text-amber-100" title="Brick">
+              <span className="text-base sm:text-xl">🧱</span>
+              <span className="text-sm sm:text-base font-black font-mono">{localPlayer.resources.brick}</span>
             </div>
-
-            {/* Wool */}
-            <div className="flex items-center gap-1.5 text-amber-100" title="Wool">
-              <span className="text-xl">🐑</span>
-              <span className="text-base font-black font-mono">{localPlayer.resources.wool}</span>
+            <div className="flex items-center gap-1 text-amber-100" title="Wool">
+              <span className="text-base sm:text-xl">🐑</span>
+              <span className="text-sm sm:text-base font-black font-mono">{localPlayer.resources.wool}</span>
             </div>
-
-            {/* Grain */}
-            <div className="flex items-center gap-1.5 text-amber-100" title="Grain">
-              <span className="text-xl">🌾</span>
-              <span className="text-base font-black font-mono">{localPlayer.resources.grain}</span>
+            <div className="flex items-center gap-1 text-amber-100" title="Grain">
+              <span className="text-base sm:text-xl">🌾</span>
+              <span className="text-sm sm:text-base font-black font-mono">{localPlayer.resources.grain}</span>
             </div>
-
-            {/* Ore */}
-            <div className="flex items-center gap-1.5 text-amber-100" title="Ore">
-              <span className="text-xl">⛰️</span>
-              <span className="text-base font-black font-mono">{localPlayer.resources.ore}</span>
-            </div>
-
-            <div className="h-6 w-[1px] bg-amber-600/40 mx-1" />
-
-            {/* Victory Points */}
-            <div className="flex items-center gap-1 text-amber-300" title="Victory Points">
-              <Trophy className="w-5 h-5 text-amber-400" />
-              <span className="text-base font-black font-mono">{localPlayer.victoryPoints}</span>
-            </div>
-
-            {/* Dev Cards */}
-            <div className="flex items-center gap-1 text-amber-200/90" title="Development Cards">
-              <Scroll className="w-5 h-5 text-amber-300" />
-              <span className="text-base font-black font-mono">{localPlayer.devCards?.length || 0}</span>
+            <div className="flex items-center gap-1 text-amber-100" title="Ore">
+              <span className="text-base sm:text-xl">⛰️</span>
+              <span className="text-sm sm:text-base font-black font-mono">{localPlayer.resources.ore}</span>
             </div>
           </div>
         )}
 
-        {/* Bottom Right: Dice Display & Action Controls */}
-        <div className="pointer-events-auto flex flex-col items-end gap-2">
-          {/* Pair of Realistic 3D-styled SVG Dice & Roll Button */}
-          <div className="flex items-center gap-2">
-            {canRoll && (
+        {/* Right: Main Action Buttons (ROLL, BUILD, TRADE, END TURN) */}
+        <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2.5">
+          {buildMode !== 'none' ? (
+            <>
               <button
-                onClick={onRollDice}
-                className="px-4 py-2 rounded-xl catan-btn-gold text-xs font-black uppercase tracking-wider flex items-center gap-1.5 shadow-[0_0_20px_rgba(245,158,11,0.8)] animate-bounce"
+                onClick={() => {
+                  useGameStore.getState().setSelectedVertexId(null);
+                  useGameStore.getState().setSelectedEdgeId(null);
+                  setBuildMode('none');
+                }}
+                className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gradient-to-b from-[#991b1b] to-[#7f1d1d] border-2 border-red-400 text-white shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
+                title="Cancel Placement"
               >
-                <span>🎲</span>
-                <span>Roll Dice</span>
+                <Ban className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5]" />
               </button>
-            )}
-            <DiceDisplay
-              dice1={gameState.dice.dice1}
-              dice2={gameState.dice.dice2}
-              total={gameState.dice.total}
-              canRoll={canRoll}
-              onClick={onRollDice}
-            />
-          </div>
+              <button
+                onClick={() => onConfirmPlacement?.()}
+                className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 border-2 border-emerald-300 text-white shadow-[0_0_25px_rgba(16,185,129,0.9)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all animate-pulse"
+                title="Confirm Placement"
+              >
+                <Check className="w-7 h-7 sm:w-8 sm:h-8 stroke-[3.5]" />
+              </button>
+            </>
+          ) : (
+            <>
+              {/* Roll Button */}
+              {canRoll && (
+                <button
+                  onClick={onRollDice}
+                  className="h-11 sm:h-13 px-3 sm:px-4 rounded-xl sm:rounded-2xl flex items-center justify-center gap-1.5 sm:gap-2 shadow-xl border-2 bg-gradient-to-b from-[#f59e0b] to-[#b45309] border-amber-200 text-[#1a0f08] hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_0_20px_rgba(245,158,11,0.7)] animate-bounce font-black transition-all"
+                  title="Roll the Dice"
+                >
+                  <span className="text-lg sm:text-xl">🎲</span>
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider font-serif">Roll</span>
+                </button>
+              )}
 
-          <div className="flex items-center gap-2">
-            {/* Green Checkmark [✓] Confirmation Button during Placement (Matching Image 2) */}
-            {buildMode !== 'none' ? (
-              <>
-                <button
-                  onClick={() => {
-                    useGameStore.getState().setSelectedVertexId(null);
-                    useGameStore.getState().setSelectedEdgeId(null);
-                    setBuildMode('none');
-                  }}
-                  className="w-12 h-12 md:w-14 md:h-14 rounded-2xl bg-gradient-to-b from-[#991b1b] to-[#7f1d1d] border-2 border-red-400 text-white shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
-                  title="Cancel Placement"
-                >
-                  <Ban className="w-6 h-6 stroke-[2.5]" />
-                </button>
-                <button
-                  onClick={() => {
-                    onConfirmPlacement?.();
-                  }}
-                  className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 border-2 border-emerald-300 text-white shadow-[0_0_25px_rgba(16,185,129,0.9)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all animate-pulse"
-                  title="Confirm Structure Placement"
-                >
-                  <Check className="w-8 h-8 stroke-[3.5]" />
-                </button>
-              </>
-            ) : (
-              <>
-                {/* Build Menu Button */}
-                <button
-                  onClick={() => setBuildModalOpen(true)}
-                  disabled={!canBuild}
-                  className={`w-11 h-11 md:w-12 md:h-12 rounded-xl flex items-center justify-center shadow-xl border-2 transition-all ${
-                    canBuild
-                      ? 'bg-gradient-to-b from-[#d97706] to-[#92400e] border-amber-300 text-amber-950 hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_4px_12px_rgba(245,158,11,0.5)]'
-                      : 'bg-[#241710] border-amber-900/40 text-amber-200/30 cursor-not-allowed opacity-50'
-                  }`}
-                  title="Build Structures (Road, Settlement, City, Dev Card)"
-                >
-                  <Hammer className="w-6 h-6 stroke-[2.5]" />
-                </button>
+              {/* Build Button */}
+              <button
+                onClick={() => setBuildModalOpen(true)}
+                disabled={!canBuild}
+                className={`h-11 sm:h-13 px-2.5 sm:px-3.5 rounded-xl sm:rounded-2xl flex items-center justify-center gap-1.5 shadow-xl border-2 transition-all ${
+                  canBuild
+                    ? 'bg-gradient-to-b from-[#d97706] to-[#92400e] border-amber-300 text-amber-950 hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_4px_12px_rgba(245,158,11,0.5)] font-black'
+                    : 'bg-[#241710] border-amber-900/40 text-amber-200/30 cursor-not-allowed opacity-50'
+                }`}
+                title="Open Build Menu"
+              >
+                <Hammer className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider font-serif">Build</span>
+              </button>
 
-                {/* Trade Button (Ship) */}
-                <button
-                  onClick={() => setTradeModalOpen(true)}
-                  disabled={!canTrade}
-                  className={`h-12 md:h-14 px-3 md:px-4 rounded-2xl flex items-center justify-center gap-2 shadow-xl border-2 transition-all ${
-                    canTrade
-                      ? 'bg-gradient-to-b from-[#f59e0b] via-[#d97706] to-[#b45309] border-amber-200 text-[#2b170c] hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_6px_16px_rgba(245,158,11,0.6)]'
-                      : 'bg-[#241710] border-amber-900/40 text-amber-200/30 cursor-not-allowed opacity-50'
-                  }`}
-                  title="Maritime & Harbor Trade"
-                >
-                  <Ship className="w-5 h-5 stroke-[2.5]" />
-                  <span className="text-xs font-black uppercase tracking-wide">Trade</span>
-                </button>
+              {/* Trade Button */}
+              <button
+                onClick={() => setTradeModalOpen(true)}
+                disabled={!canTrade}
+                className={`h-11 sm:h-13 px-2.5 sm:px-3.5 rounded-xl sm:rounded-2xl flex items-center justify-center gap-1.5 shadow-xl border-2 transition-all ${
+                  canTrade
+                    ? 'bg-gradient-to-b from-[#f59e0b] via-[#d97706] to-[#b45309] border-amber-200 text-[#2b170c] hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_6px_16px_rgba(245,158,11,0.6)] font-black'
+                    : 'bg-[#241710] border-amber-900/40 text-amber-200/30 cursor-not-allowed opacity-50'
+                }`}
+                title="Trade with Players or Bank"
+              >
+                <Ship className="w-4 h-4 sm:w-5 sm:h-5 stroke-[2.5]" />
+                <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider font-serif">Trade</span>
+              </button>
 
-                {/* Dev Cards Button */}
-                <button
-                  onClick={() => setDevCardPanelOpen(true)}
-                  className={`relative h-12 md:h-14 px-3 md:px-4 rounded-xl flex items-center justify-center gap-2 shadow-xl border-2 transition-all ${
-                    (localPlayer?.devCards?.length ?? 0) > 0
-                      ? 'bg-gradient-to-b from-[#7c3aed] to-[#5b21b6] border-purple-300 text-purple-100 hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_4px_12px_rgba(147,51,234,0.5)]'
-                      : 'bg-[#241710] border-amber-900/40 text-amber-200/50 hover:border-purple-700/50 cursor-pointer'
-                  }`}
-                  title={`Development Cards (${localPlayer?.devCards?.length ?? 0} in hand)`}
-                >
-                  <Scroll className="w-4 h-4 stroke-[2.5]" />
-                  <span className="text-xs font-black uppercase tracking-wide">Dev Cards</span>
-                  {(localPlayer?.devCards?.length ?? 0) > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-gradient-to-br from-purple-400 to-purple-600 text-white text-[10px] font-black flex items-center justify-center shadow-md border border-white/40">
-                      {localPlayer?.devCards?.length}
-                    </span>
-                  )}
-                </button>
-
-                {/* End Turn Action Button */}
-                <button
-                  onClick={canRoll ? onRollDice : onEndTurn}
-                  disabled={!canRoll && !canEndTurn}
-                  className={`px-4 h-12 md:h-14 rounded-2xl flex items-center justify-center gap-2 shadow-xl border-2 transition-all ${
-                    canRoll || canEndTurn
-                      ? 'bg-gradient-to-b from-[#fbbf24] via-[#f59e0b] to-[#d97706] border-amber-100 text-[#1a0f08] hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_6px_20px_rgba(245,158,11,0.7)]'
-                      : 'bg-[#241710] border-amber-900/40 text-amber-200/30 cursor-not-allowed opacity-50'
-                  }`}
-                  title={canRoll ? 'Roll Dice' : canEndTurn ? 'End Turn' : 'Waiting for Turn'}
-                >
-                  <RotateCcw className="w-5 h-5 stroke-[3] transform -scale-x-100" />
-                  <span className="text-xs font-black uppercase tracking-wider hidden sm:inline">
-                    {canRoll ? 'Roll' : canEndTurn ? 'End Turn' : 'Turn'}
+              {/* Development Cards Button */}
+              <button
+                onClick={() => {
+                  soundManager.playClick();
+                  setDevCardPanelOpen(true);
+                }}
+                className="relative h-11 sm:h-13 px-2.5 sm:px-3.5 rounded-xl sm:rounded-2xl flex items-center justify-center gap-1.5 shadow-xl border-2 transition-all bg-[#241710] hover:bg-[#381a10] border-amber-600/60 hover:border-amber-400 text-purple-300 hover:text-white cursor-pointer active:scale-95"
+                title="Development Cards Hand (C)"
+              >
+                <Scroll className="w-4 h-4 sm:w-5 sm:h-5 text-purple-400 stroke-[2.5]" />
+                <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider font-serif">Cards</span>
+                {(localPlayer?.devCards?.length ?? 0) > 0 && (
+                  <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full bg-purple-600 text-white font-mono text-[9px] font-black border border-purple-300">
+                    {localPlayer?.devCards?.length}
                   </span>
-                </button>
-              </>
-            )}
-          </div>
+                )}
+              </button>
+
+              {/* Visually Prominent End Turn Button */}
+              <button
+                onClick={canRoll ? onRollDice : onEndTurn}
+                disabled={!canRoll && !canEndTurn}
+                className={`h-11 sm:h-13 px-4 sm:px-6 rounded-xl sm:rounded-2xl flex items-center justify-center gap-2 shadow-2xl border-2 transition-all ${
+                  canRoll || canEndTurn
+                    ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 border-amber-100 text-[#1a0f08] hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_0_25px_rgba(245,158,11,0.85)] ring-2 ring-amber-300/70 font-black animate-pulse'
+                    : 'bg-[#241710] border-amber-900/40 text-amber-200/30 cursor-not-allowed opacity-50'
+                }`}
+                title="End Your Turn"
+              >
+                <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
+                <span className="text-xs sm:text-sm font-black uppercase tracking-widest font-serif">
+                  End Turn
+                </span>
+              </button>
+            </>
+          )}
         </div>
       </footer>
 
       {/* ============================================================ */}
-      {/* 4. Complete Modals Suite matching All Reference Images */}
+      {/* 4. MODALS & DRAWERS SUITE                                    */}
       {/* ============================================================ */}
+
+      {/* Mobile Slide-Up Drawer */}
+      <MobileBottomSheet
+        isOpen={isBottomSheetOpen}
+        onClose={() => setBottomSheetOpen(false)}
+        onOpenLog={() => setChatLogOpen(true)}
+        onOpenRules={() => setAlmanacOpen(true)}
+        onOpenBankTrade={() => setTradeModalOpen(true)}
+        onOpenStats={() => setScoreboardOpen(true)}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onLeaveMatch={handleLeaveMatch}
+      />
+
+      {/* Scoreboard / Statistics Modal */}
       <ScoreboardModal
         isOpen={isScoreboardOpen}
         onClose={() => setScoreboardOpen(false)}
@@ -646,12 +977,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         diceRollHistory={diceHistory}
       />
 
+      {/* Emoji Reactions */}
       <EmojiModal
         isOpen={isEmojiOpen}
         onClose={() => setEmojiOpen(false)}
         onSelectEmoji={handleSelectEmoji}
       />
 
+      {/* Full Chat Log Modal */}
       <ChatLogModal
         isOpen={isChatLogOpen}
         onClose={() => setChatLogOpen(false)}
@@ -660,17 +993,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         onSendMessage={handleSendMessage}
       />
 
-      {/* Floating Animated Resource Cards and Dev Card Gain */}
-      <ResourceFlyAnimation
-        resources={localPlayer?.resources}
-        devCardCount={localPlayer?.devCards?.length || 0}
-      />
-
+      {/* Maritime Almanac & Game Rules */}
       <AlmanacModal
         isOpen={isAlmanacOpen}
         onClose={() => setAlmanacOpen(false)}
       />
 
+      {/* Tavern Settings Modal */}
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -678,6 +1007,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         onUpdateSettings={setSettings}
       />
 
+      {/* Profile & Avatar Modal */}
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setProfileOpen(false)}
+        userProfile={userProfile}
+        onProfileUpdated={(updated) => setUserProfile(updated)}
+      />
+
+      {/* Development Cards Panel */}
       <DevCardPanel
         isOpen={isDevCardPanelOpen}
         onClose={() => setDevCardPanelOpen(false)}
@@ -686,6 +1024,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         onPlay={(card, params) => {
           onPlayDevCard?.(card, params);
         }}
+      />
+
+      {/* Floating Animated Resource Gains */}
+      <ResourceFlyAnimation
+        resources={localPlayer?.resources}
+        devCardCount={localPlayer?.devCards?.length || 0}
       />
     </div>
   );

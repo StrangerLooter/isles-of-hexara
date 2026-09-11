@@ -33,6 +33,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       onHexClick: (hexId) => onHexSelect?.(hexId),
     });
     gameInstanceRef.current = game;
+    if (typeof window !== 'undefined') {
+      (window as any).__hexara_babylon__ = game;
+    }
 
     if (gameState) {
       game.syncGameState(gameState);
@@ -41,6 +44,9 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     return () => {
       game.dispose();
       gameInstanceRef.current = null;
+      if (typeof window !== 'undefined') {
+        delete (window as any).__hexara_babylon__;
+      }
     };
   }, []);
 
@@ -108,3 +114,21 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
     </div>
   );
 };
+
+export function zoomInCamera() {
+  if (typeof window !== 'undefined' && (window as any).__hexara_babylon__) {
+    (window as any).__hexara_babylon__.zoomIn();
+  }
+}
+
+export function zoomOutCamera() {
+  if (typeof window !== 'undefined' && (window as any).__hexara_babylon__) {
+    (window as any).__hexara_babylon__.zoomOut();
+  }
+}
+
+export function resetGameCamera() {
+  if (typeof window !== 'undefined' && (window as any).__hexara_babylon__) {
+    (window as any).__hexara_babylon__.resetCamera();
+  }
+}

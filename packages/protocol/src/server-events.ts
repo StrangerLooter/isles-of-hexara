@@ -11,6 +11,7 @@ export const SERVER_EVENTS = {
   TURN_TIMER: 'server:turn_timer',
   ERROR: 'server:error',
   CHAT_MESSAGE: 'server:chat_message',
+  COUNTDOWN: 'server:countdown',
 } as const;
 
 export type ServerEventName = (typeof SERVER_EVENTS)[keyof typeof SERVER_EVENTS];
@@ -31,6 +32,7 @@ export interface ServerLobbySettings {
   maxPlayers: 3 | 4;
   mode: 'solo' | 'online';
   seed?: number;
+  turnDurationSeconds?: number;
 }
 
 export interface ServerLobbyStatePayload {
@@ -80,4 +82,9 @@ export interface ServerChatPayload {
   username: string;
   message: string;
   timestamp: number;
+}
+
+export interface ServerCountdownPayload {
+  count: number;
+  message?: string;
 }

@@ -68,6 +68,7 @@ export class LobbyManager {
         maxPlayers: settings.maxPlayers === 3 ? 3 : 4,
         targetVictoryPoints: settings.targetVictoryPoints || 10,
         scenarioId: settings.scenarioId || 'first_island',
+        turnDurationSeconds: settings.turnDurationSeconds || 60,
       },
       status: 'waiting',
       createdAt: Date.now(),
@@ -233,6 +234,23 @@ export class LobbyManager {
     return { success: true, lobby, kickedPlayerId: seatPlayerId };
   }
 
+  updateLobbySettings(
+    code: string,
+    hostPlayerId: string,
+    updates: Partial<ServerLobbySettings>
+  ): { success: boolean; lobby?: Lobby; error?: string } {
+    const formattedCode = code.toUpperCase();
+    const lobby = this.lobbies.get(formattedCode);
+    if (!lobby) return { success: false, error: 'ROOM_NOT_FOUND' };
+    if (lobby.hostId !== hostPlayerId) return { success: false, error: 'HOST_ONLY_ACTION' };
+
+    lobby.settings = {
+      ...lobby.settings,
+      ...updates,
+    };
+    return { success: true, lobby };
+  }
+
   startGame(
     code: string,
     hostPlayerId: string
@@ -255,6 +273,12 @@ export class LobbyManager {
 
     if (lobby.status !== 'waiting') {
       return { success: false, error: 'GAME_ALREADY_STARTED' };
+    }
+
+    // Validate that all joined crew members are ready
+    const unreadySeat = lobby.seats.find((s) => !s.isAi && !s.ready && s.playerId !== hostPlayerId);
+    if (unreadySeat) {
+      return { success: false, error: 'NOT_ALL_PLAYERS_READY' };
     }
 
     // Fill remaining seats with AI if solo or not enough human players

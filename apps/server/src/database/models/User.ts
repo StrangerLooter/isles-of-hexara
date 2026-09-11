@@ -46,6 +46,22 @@ export const UserRepository = {
     return memoryUsers.get(username.toLowerCase()) ?? null;
   },
 
+  async findByEmailOrUsername(identifier: string): Promise<(IUser & { _id: string }) | null> {
+    const term = identifier.trim().toLowerCase();
+    if (isMongoConnected()) {
+      const doc = (await UserModel.findOne({
+        $or: [{ username: new RegExp(`^${identifier}$`, 'i') }, { email: term }],
+      }).lean()) as (IUser & { _id: any }) | null;
+      return doc ? { ...doc, _id: String(doc._id) } : null;
+    }
+    for (const u of memoryUsers.values()) {
+      if (u.username.toLowerCase() === term || (u.email && u.email.toLowerCase() === term)) {
+        return u;
+      }
+    }
+    return null;
+  },
+
   async createGuest(username: string): Promise<IUser & { _id: string }> {
     if (isMongoConnected()) {
       const doc = await UserModel.create({

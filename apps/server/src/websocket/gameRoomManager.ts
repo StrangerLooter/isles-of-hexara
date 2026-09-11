@@ -25,6 +25,7 @@ export class GameRoomManager {
   private roomWatchdogs = new Map<string, NodeJS.Timeout>();
   private turnTimers = new Map<string, { timeout: NodeJS.Timeout; turnId: number; deadline: number }>();
   private turnCounters = new Map<string, number>();
+  private turnDurations = new Map<string, number>();
   private lobbyManager: LobbyManager;
   private io: Server;
 
@@ -56,13 +57,17 @@ export class GameRoomManager {
     this.activeGames.set(game.id, game);
     this.actionCounters.set(game.id, 0);
 
+    const turnDuration = lobby.settings.turnDurationSeconds || 60;
+    this.turnDurations.set(lobby.code, turnDuration);
+    this.turnDurations.set(game.id, turnDuration);
+
     logger.info(
       { gameId: game.id, code: lobby.code, playerCount: players.length },
       'Authoritative Game created from lobby'
     );
 
-    // Broadcast initial game state & start 60s turn timer
-    this.io.to(`game:${lobby.code}`).emit(SERVER_EVENTS.GAME_STATE, game);
+    // Broadcast initial game state & start turn timer
+    this.broadcastGameState(game.id, game, lobby.code);
     this.startTurnTimer(game.id, lobby.code);
     this.resetWatchdog(game.id);
     this.checkAndTriggerAiMove(game.id);
@@ -87,6 +92,7 @@ export class GameRoomManager {
       game = createInitialGameState(gameId, initialPlayers);
       this.activeGames.set(gameId, game);
       this.actionCounters.set(gameId, 0);
+      this.turnDurations.set(gameId, 60);
       logger.info({ gameId, hostPlayer: player.username }, 'New authoritative game created');
     } else {
       if (game.players[player.id]) {
@@ -135,7 +141,7 @@ export class GameRoomManager {
     }
 
     socket.join(`game:${gameId}`);
-    this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, game);
+    this.broadcastGameState(game.id, game, gameId);
     this.startTurnTimer(game.id, gameId);
     this.resetWatchdog(game.id);
     this.checkAndTriggerAiMove(gameId);
@@ -152,8 +158,21 @@ export class GameRoomManager {
       this.clearDisconnectGrace(gameId, playerId);
 
       socket.join(`game:${gameId}`);
-      socket.emit(SERVER_EVENTS.GAME_SYNC, { state: game });
-      this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, game);
+      socket.emit(SERVER_EVENTS.GAME_SYNC, { state: this.sanitizeStateForPlayer(game, playerId) });
+
+      const currentTimer = this.turnTimers.get(gameId);
+      if (currentTimer) {
+        const activePlayerId = game.playerOrder[game.currentPlayerIndex];
+        const durationSeconds = this.turnDurations.get(gameId) ?? 60;
+        socket.emit(SERVER_EVENTS.TURN_TIMER, {
+          currentPlayerId: activePlayerId,
+          turnDeadline: currentTimer.deadline,
+          turnId: currentTimer.turnId,
+          durationSeconds,
+        });
+      }
+
+      this.broadcastGameState(game.id, game);
       logger.info({ gameId, playerId }, 'Player successfully reconnected to game');
       return true;
     }
@@ -174,7 +193,7 @@ export class GameRoomManager {
         playerId,
         reason: 'Connection lost (60s grace period active)',
       });
-      this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, game);
+      this.broadcastGameState(gameId, game);
 
       // Start 60s grace period timer
       const graceKey = `${gameId}:${playerId}`;
@@ -215,7 +234,7 @@ export class GameRoomManager {
         'Disconnect grace period expired. Seat converted to AI controller'
       );
 
-      this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, game);
+      this.broadcastGameState(gameId, game);
       this.checkAndTriggerAiMove(gameId);
     }
   }
@@ -253,7 +272,7 @@ export class GameRoomManager {
       this.activeGames.set(result.newState.id, result.newState);
     }
 
-    this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.GAME_STATE, result.newState);
+    this.broadcastGameState(gameId, result.newState);
     this.resetWatchdog(gameId);
 
     // Track action count and persist periodic snapshot
@@ -265,11 +284,65 @@ export class GameRoomManager {
       this.clearWatchdog(gameId);
       this.clearTurnTimer(gameId);
     } else {
-      this.startTurnTimer(gameId);
+      const turnChanged =
+        result.newState.currentPlayerIndex !== game.currentPlayerIndex ||
+        result.newState.turnNumber !== game.turnNumber ||
+        result.newState.phase !== game.phase;
+
+      if (turnChanged || !this.turnTimers.has(gameId)) {
+        this.startTurnTimer(gameId);
+      }
       this.checkAndTriggerAiMove(gameId);
     }
 
     return { success: true, newState: result.newState };
+  }
+
+  /**
+   * Sanitizes game state for a viewing player by masking unplayed development
+   * cards belonging to opponents, keeping hand size accurate while protecting private card types.
+   */
+  public sanitizeStateForPlayer(state: GameState, viewerPlayerId?: string): GameState {
+    const maskedPlayers: Record<string, any> = {};
+    for (const [pId, player] of Object.entries(state.players)) {
+      if (pId === viewerPlayerId || !viewerPlayerId) {
+        maskedPlayers[pId] = player;
+      } else {
+        maskedPlayers[pId] = {
+          ...player,
+          devCards: (player.devCards || []).map(() => 'unknown' as any),
+        };
+      }
+    }
+    return {
+      ...state,
+      players: maskedPlayers,
+    };
+  }
+
+  /**
+   * Broadcasts sanitized game state to all sockets in the game room so no player
+   * receives opponent's hidden development card identities.
+   */
+  public broadcastGameState(gameId: string, state: GameState, roomCode?: string): void {
+    const sendToRoom = (roomKey: string) => {
+      const roomSockets = this.io?.sockets?.adapter?.rooms?.get(roomKey);
+      if (roomSockets && roomSockets.size > 0 && this.io?.sockets?.sockets) {
+        for (const socketId of roomSockets) {
+          const clientSocket = this.io.sockets.sockets.get(socketId);
+          if (!clientSocket) continue;
+          const playerId = (clientSocket.data as any)?.playerId || (clientSocket.handshake?.auth as any)?.playerId;
+          clientSocket.emit(SERVER_EVENTS.GAME_STATE, this.sanitizeStateForPlayer(state, playerId));
+        }
+      } else {
+        this.io?.to(roomKey)?.emit(SERVER_EVENTS.GAME_STATE, state);
+      }
+    };
+
+    sendToRoom(`game:${gameId}`);
+    if (roomCode && roomCode !== gameId) {
+      sendToRoom(`game:${roomCode}`);
+    }
   }
 
   private resetWatchdog(gameId: string): void {
@@ -295,14 +368,15 @@ export class GameRoomManager {
 
     const turnId = (this.turnCounters.get(gameId) ?? 0) + 1;
     this.turnCounters.set(gameId, turnId);
-    const deadline = Date.now() + 60000;
+    const durationSeconds = this.turnDurations.get(gameId) ?? (roomCode ? this.turnDurations.get(roomCode) : undefined) ?? 60;
+    const deadline = Date.now() + durationSeconds * 1000;
     const activePlayerId = game.playerOrder[game.currentPlayerIndex];
 
     const timerPayload = {
       currentPlayerId: activePlayerId,
       turnDeadline: deadline,
       turnId,
-      durationSeconds: 60,
+      durationSeconds,
     };
 
     this.io.to(`game:${gameId}`).emit(SERVER_EVENTS.TURN_TIMER, timerPayload);
@@ -312,7 +386,7 @@ export class GameRoomManager {
 
     const timeout = setTimeout(() => {
       this.handleTurnTimeout(gameId, turnId);
-    }, 60000);
+    }, durationSeconds * 1000);
     timeout.unref();
 
     this.turnTimers.set(gameId, { timeout, turnId, deadline });

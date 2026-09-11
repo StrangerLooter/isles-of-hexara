@@ -125,6 +125,7 @@ export interface PreMatchLaunchOptions {
   randomMapTopology: boolean;
   boardSeed: number;
   roomCode?: string;
+  turnDurationSeconds?: number;
 }
 
 interface ScenarioModalProps {
@@ -159,6 +160,8 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
   const [randomMapTopology, setRandomMapTopology] = useState<boolean>(true);
   const [boardSeed, setBoardSeed] = useState<number>(() => Math.floor(100000 + Math.random() * 900000));
   const [isShuffling, setIsShuffling] = useState<boolean>(false);
+  const [turnTimeOption, setTurnTimeOption] = useState<'30' | '60' | '90' | '120' | 'custom'>('60');
+  const [customTurnSeconds, setCustomTurnSeconds] = useState<number>(45);
 
   useEffect(() => {
     if (initialMode) setGameMode(initialMode);
@@ -212,6 +215,9 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
           : createdRoomCode
         : undefined;
 
+    const finalTurnDuration =
+      turnTimeOption === 'custom' ? Math.max(10, Math.min(600, customTurnSeconds)) : Number(turnTimeOption);
+
     onLaunchGame({
       scenarioId: currentScenario.id,
       scenarioName: currentScenario.name,
@@ -225,6 +231,7 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
       randomMapTopology,
       boardSeed,
       roomCode: activeRoomCode,
+      turnDurationSeconds: finalTurnDuration,
     });
   };
 
@@ -591,6 +598,46 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
                   )}
                 </div>
               )}
+
+              {/* Player Turn Time Configuration */}
+              <div className="bg-black/30 p-3.5 rounded-xl border border-amber-600/20">
+                <div className="flex justify-between items-center text-xs font-bold text-gray-200 mb-2">
+                  <span className="text-amber-300 uppercase tracking-wider">Player Turn Time</span>
+                  <span className="text-amber-400 font-mono font-black">
+                    {turnTimeOption === 'custom' ? `${customTurnSeconds}s (Custom)` : `${turnTimeOption}s`}
+                  </span>
+                </div>
+                <div className="grid grid-cols-5 gap-1.5 mb-2">
+                  {(['30', '60', '90', '120', 'custom'] as const).map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setTurnTimeOption(opt)}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-bold uppercase transition-all ${
+                        turnTimeOption === opt
+                          ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-amber-950 font-black shadow border border-amber-300'
+                          : 'bg-[#24140c] text-amber-200/70 border border-amber-900/60 hover:text-amber-200'
+                      }`}
+                    >
+                      {opt === 'custom' ? 'Custom' : `${opt}s`}
+                    </button>
+                  ))}
+                </div>
+                {turnTimeOption === 'custom' && (
+                  <div className="flex items-center gap-2 bg-black/40 p-2 rounded-lg border border-amber-700/50 mt-1">
+                    <span className="text-xs text-amber-200/80">Custom Seconds:</span>
+                    <input
+                      type="number"
+                      min={10}
+                      max={300}
+                      value={customTurnSeconds}
+                      onChange={(e) => setCustomTurnSeconds(Math.max(10, Math.min(600, Number(e.target.value) || 10)))}
+                      className="w-20 bg-black/70 border border-amber-500/50 rounded px-2 py-1 text-xs text-amber-300 font-mono font-black"
+                    />
+                    <span className="text-[10px] text-gray-400">(10s – 300s)</span>
+                  </div>
+                )}
+              </div>
 
               {/* Victory Points Slider */}
               <div className={`bg-black/30 p-3.5 rounded-xl border border-amber-600/20 ${!isHost ? 'opacity-60' : ''}`}>

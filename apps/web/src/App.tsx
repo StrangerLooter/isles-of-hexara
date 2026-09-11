@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import HomePage from './app/page';
 import GamePage from './app/game/page';
+import { LoadingScreen } from './components/common/LoadingScreen';
 
 export default function App() {
+  const [isLoading, setIsLoading] = useState(true);
   const [route, setRoute] = useState<'home' | 'game'>(() => {
     return window.location.hash.includes('/game') || window.location.pathname.includes('/game')
       ? 'game'
@@ -25,6 +27,10 @@ export default function App() {
       window.removeEventListener('popstate', handleHashChange);
     };
   }, []);
+
+  if (isLoading) {
+    return <LoadingScreen onLoaded={() => setIsLoading(false)} />;
+  }
 
   return route === 'game' ? <GamePage /> : <HomePage />;
 }

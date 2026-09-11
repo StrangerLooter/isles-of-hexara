@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { signJwt, verifyJwt } from '../auth/jwt.js';
@@ -8,12 +9,29 @@ import { isMongoConnected } from '../database/mongoClient.js';
 
 const guestAuthSchema = z.object({
   username: z.string().min(3).max(24),
+  avatarId: z.string().optional(),
+});
+
+const registerAuthSchema = z.object({
+  username: z.string().min(3).max(24),
+  email: z.string().email(),
+  password: z.string().min(6),
+  avatarId: z.string().optional(),
+});
+
+const loginAuthSchema = z.object({
+  emailOrUsername: z.string().min(3),
+  password: z.string().min(1),
 });
 
 const patchProfileSchema = z.object({
   displayName: z.string().min(1).max(24).optional(),
   avatarId: z.string().min(1).max(50).optional(),
 });
+
+function hashPassword(password: string): string {
+  return crypto.createHash('sha256').update(password + '_hexara_salt').digest('hex');
+}
 
 function extractToken(request: any): string | null {
   const authHeader = request.headers.authorization;
@@ -48,7 +66,7 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
       });
     }
 
-    const { username } = parsed.data;
+    const { username, avatarId } = parsed.data;
     let user = await UserRepository.findByUsername(username);
     if (!user) {
       user = await UserRepository.createGuest(username);
@@ -59,12 +77,17 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
       profile = await ProfileRepository.createOrUpdate({
         userId: user._id,
         displayName: username,
-        avatarId: 'avatar_captain',
+        avatarId: avatarId || 'avatar_captain',
         level: 1,
         experience: 0,
         gamesPlayed: 0,
         wins: 0,
         totalVictoryPoints: 0,
+      });
+    } else if (avatarId && profile.avatarId !== avatarId) {
+      profile = await ProfileRepository.createOrUpdate({
+        ...profile,
+        avatarId,
       });
     }
 
@@ -77,6 +100,111 @@ export const apiRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) =>
     return reply.status(200).send({
       token,
       user: { id: user._id, username: user.username },
+      profile,
+    });
+  });
+
+  // 2b. User Registration
+  fastify.post('/api/auth/register', async (request, reply) => {
+    const parsed = registerAuthSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: 'INVALID_PAYLOAD',
+        message: parsed.error.issues[0]?.message || 'Invalid registration details',
+      });
+    }
+
+    const { username, email, password, avatarId } = parsed.data;
+    const existing = await UserRepository.findByEmailOrUsername(username);
+    if (existing) {
+      return reply.status(409).send({
+        error: 'USERNAME_TAKEN',
+        message: 'A voyager with this username or email already exists',
+      });
+    }
+
+    const passwordHash = hashPassword(password);
+    const user = await UserRepository.create({
+      username,
+      email,
+      passwordHash,
+      isGuest: false,
+    });
+
+    const profile = await ProfileRepository.createOrUpdate({
+      userId: user._id,
+      displayName: username,
+      avatarId: avatarId || 'avatar_captain',
+      level: 1,
+      experience: 0,
+      gamesPlayed: 0,
+      wins: 0,
+      totalVictoryPoints: 0,
+    });
+
+    const token = signJwt({
+      sub: user._id,
+      name: user.username,
+      guest: false,
+    });
+
+    return reply.status(201).send({
+      token,
+      user: { id: user._id, username: user.username, email: user.email },
+      profile,
+    });
+  });
+
+  // 2c. User Login
+  fastify.post('/api/auth/login', async (request, reply) => {
+    const parsed = loginAuthSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: 'INVALID_PAYLOAD',
+        message: 'Please provide valid credentials',
+      });
+    }
+
+    const { emailOrUsername, password } = parsed.data;
+    const user = await UserRepository.findByEmailOrUsername(emailOrUsername);
+    if (!user || !user.passwordHash) {
+      return reply.status(401).send({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Invalid username/email or password',
+      });
+    }
+
+    const expectedHash = hashPassword(password);
+    if (user.passwordHash !== expectedHash) {
+      return reply.status(401).send({
+        error: 'INVALID_CREDENTIALS',
+        message: 'Invalid username/email or password',
+      });
+    }
+
+    let profile = await ProfileRepository.findByUserId(user._id);
+    if (!profile) {
+      profile = await ProfileRepository.createOrUpdate({
+        userId: user._id,
+        displayName: user.username,
+        avatarId: 'avatar_captain',
+        level: 1,
+        experience: 0,
+        gamesPlayed: 0,
+        wins: 0,
+        totalVictoryPoints: 0,
+      });
+    }
+
+    const token = signJwt({
+      sub: user._id,
+      name: user.username,
+      guest: false,
+    });
+
+    return reply.status(200).send({
+      token,
+      user: { id: user._id, username: user.username, email: user.email },
       profile,
     });
   });

@@ -30,6 +30,7 @@ import { VictoryScreen } from '../../components/game-ui/VictoryScreen';
 import { GameCanvas } from '../../game/GameCanvas';
 import { useGameStore } from '../../store/gameStore';
 import { ChatMessage } from '../../components/game-ui/ChatLogModal';
+import { soundManager } from '../../game/SoundManager';
 
 export default function GamePage() {
   const {
@@ -49,6 +50,8 @@ export default function GamePage() {
 
   const socketRef = useRef<Socket | null>(null);
   const [isOnlineConnected, setIsOnlineConnected] = useState(false);
+  const [turnDeadline, setTurnDeadline] = useState<number | undefined>(undefined);
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'reconnecting' | 'disconnected'>('disconnected');
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
     {
       id: 'system_1',
@@ -168,6 +171,7 @@ export default function GamePage() {
 
       socket.on('connect', () => {
         setIsOnlineConnected(true);
+        setConnectionStatus('connected');
         socket.emit(CLIENT_EVENTS.JOIN_GAME, {
           code: roomCode,
           gameId: roomCode,
@@ -178,7 +182,9 @@ export default function GamePage() {
 
       socket.on(SERVER_EVENTS.GAME_STATE, (state: GameState) => {
         setGameState(state);
+        sessionStorage.setItem('hexara_active_game_state', JSON.stringify(state));
         if (state.phase === 'FINISHED' && state.winnerId === localPlayerId) {
+          soundManager.playVictory();
           confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
         }
       });
@@ -186,10 +192,29 @@ export default function GamePage() {
       socket.on(SERVER_EVENTS.GAME_SYNC, (payload: { state: GameState }) => {
         if (payload?.state) {
           setGameState(payload.state);
+          sessionStorage.setItem('hexara_active_game_state', JSON.stringify(payload.state));
         }
       });
 
+      socket.on(SERVER_EVENTS.TURN_TIMER, (payload: { currentPlayerId: string; turnDeadline: number; turnId: number; durationSeconds: number }) => {
+        if (payload?.turnDeadline) {
+          setTurnDeadline(payload.turnDeadline);
+        }
+      });
+
+      socket.on(SERVER_EVENTS.TURN_EXPIRED, () => {
+        soundManager.playError();
+        setBuildMode('none');
+        useGameStore.getState().setSelectedVertexId(null);
+        useGameStore.getState().setSelectedEdgeId(null);
+        useGameStore.getState().setBuildModalOpen(false);
+        useGameStore.getState().setTradeModalOpen(false);
+        setErrorToast('Turn deadline expired. Turn automatically advanced.');
+        setTimeout(() => setErrorToast(null), 3500);
+      });
+
       socket.on(SERVER_EVENTS.ERROR, (err: ServerErrorPayload) => {
+        soundManager.playError();
         setErrorToast(err.message);
         setTimeout(() => setErrorToast(null), 4000);
       });
@@ -207,8 +232,14 @@ export default function GamePage() {
         ]);
       });
 
+      socket.on('disconnect', () => {
+        setIsOnlineConnected(false);
+        setConnectionStatus('reconnecting');
+      });
+
       socket.on('connect_error', () => {
         setIsOnlineConnected(false);
+        setConnectionStatus('reconnecting');
       });
 
       return () => {
@@ -216,6 +247,26 @@ export default function GamePage() {
       };
     }
   }, []);
+
+  // Offline Solo Mode: Update turn deadline on player turn change
+  useEffect(() => {
+    if (!gameState || isOnlineConnected || gameState.phase === 'FINISHED') return;
+    const storedTurnDuration = Number(sessionStorage.getItem('hexara_turn_duration') || '60');
+    setTurnDeadline(Date.now() + storedTurnDuration * 1000);
+  }, [gameState?.currentPlayerIndex, gameState?.turnNumber, gameState?.phase, isOnlineConnected]);
+
+  // Cancel pending placement if active player index changes
+  useEffect(() => {
+    if (!gameState) return;
+    const activePlayerId = gameState.playerOrder[gameState.currentPlayerIndex];
+    if (activePlayerId !== localPlayerId) {
+      if (buildMode !== 'none') setBuildMode('none');
+      useGameStore.getState().setSelectedVertexId(null);
+      useGameStore.getState().setSelectedEdgeId(null);
+      useGameStore.getState().setBuildModalOpen(false);
+      useGameStore.getState().setTradeModalOpen(false);
+    }
+  }, [gameState?.currentPlayerIndex, localPlayerId, buildMode]);
 
   // Offline Autonomous AI Turn Automation
   useEffect(() => {
@@ -535,9 +586,15 @@ export default function GamePage() {
       if (res.success) {
         setGameState(res.newState);
         if (res.newState.phase === 'FINISHED') {
-          confetti({ particleCount: 150, spread: 70 });
+          if (res.newState.winnerId === localPlayerId) {
+            soundManager.playVictory();
+            confetti({ particleCount: 150, spread: 70 });
+          } else {
+            soundManager.playError();
+          }
         }
       } else {
+        soundManager.playError();
         setErrorToast(res.error || 'Action failed');
         setTimeout(() => setErrorToast(null), 3000);
       }
@@ -556,6 +613,7 @@ export default function GamePage() {
       // In SETUP phases: immediately place the piece on click (no separate confirm needed)
       const isSetup = gameState.phase.startsWith('SETUP');
       if (isSetup) {
+        soundManager.playPlacement();
         dispatchAction({ type: 'BUILD_SETTLEMENT', playerId: localPlayerId, vertexId });
         setSelectedVertexId(null);
         setBuildMode('road');
@@ -573,6 +631,7 @@ export default function GamePage() {
       // In SETUP phases: immediately place road on click
       const isSetup = gameState.phase.startsWith('SETUP');
       if (isSetup) {
+        soundManager.playPlacement();
         dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId });
         setSelectedEdgeId(null);
         setBuildMode('none');
@@ -587,10 +646,12 @@ export default function GamePage() {
 
     if (buildMode === 'settlement') {
       if (!selectedVertexId) {
+        soundManager.playError();
         setErrorToast('Please click an intersection circle on the board first.');
         setTimeout(() => setErrorToast(null), 3000);
         return;
       }
+      soundManager.playPlacement();
       dispatchAction({ type: 'BUILD_SETTLEMENT', playerId: localPlayerId, vertexId: selectedVertexId });
       setSelectedVertexId(null);
       if (isSetup) {
@@ -600,19 +661,23 @@ export default function GamePage() {
       }
     } else if (buildMode === 'city') {
       if (!selectedVertexId) {
+        soundManager.playError();
         setErrorToast('Please click an intersection to upgrade to city.');
         setTimeout(() => setErrorToast(null), 3000);
         return;
       }
+      soundManager.playPlacement();
       dispatchAction({ type: 'BUILD_CITY', playerId: localPlayerId, vertexId: selectedVertexId });
       setSelectedVertexId(null);
       setBuildMode('none');
     } else if (buildMode === 'road') {
       if (!selectedEdgeId) {
+        soundManager.playError();
         setErrorToast('Please click a road path on the board first.');
         setTimeout(() => setErrorToast(null), 3000);
         return;
       }
+      soundManager.playPlacement();
       dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId: selectedEdgeId });
       setSelectedEdgeId(null);
       if (isSetup) {
@@ -627,19 +692,23 @@ export default function GamePage() {
   const handleHexSelect = (hexId: string) => {
     if (!gameState) return;
     if (gameState.phase === 'ROBBER_MOVE') {
+      soundManager.playClick();
       dispatchAction({ type: 'MOVE_ROBBER', playerId: localPlayerId, hexId });
     }
   };
 
   const handleRollDice = () => {
+    soundManager.playDiceRoll();
     dispatchAction({ type: 'ROLL_DICE', playerId: localPlayerId });
   };
 
   const handleEndTurn = () => {
+    soundManager.playTurnChime();
     dispatchAction({ type: 'END_TURN', playerId: localPlayerId });
   };
 
   const handleBankTrade = (giving: ResourceType, receiving: ResourceType) => {
+    soundManager.playClick();
     dispatchAction({ type: 'TRADE_BANK', playerId: localPlayerId, giving, receiving });
   };
 
@@ -647,26 +716,32 @@ export default function GamePage() {
     offer: Partial<Record<ResourceType, number>>,
     request: Partial<Record<ResourceType, number>>
   ) => {
+    soundManager.playClick();
     dispatchAction({ type: 'TRADE_PROPOSE', playerId: localPlayerId, offer, request });
   };
 
   const handleCancelTrade = () => {
+    soundManager.playClick();
     dispatchAction({ type: 'TRADE_CANCEL', playerId: localPlayerId });
   };
 
   const handleAcceptTrade = () => {
+    soundManager.playPlacement();
     dispatchAction({ type: 'TRADE_ACCEPT', playerId: localPlayerId });
   };
 
   const handleDeclineTrade = () => {
+    soundManager.playClick();
     dispatchAction({ type: 'TRADE_CANCEL', playerId: localPlayerId });
   };
 
   const handleBuyDevCard = () => {
+    soundManager.playDevCard();
     dispatchAction({ type: 'BUY_DEV_CARD', playerId: localPlayerId });
   };
 
   const handlePlayDevCard = (card: string, params?: DevCardParams) => {
+    soundManager.playDevCard();
     dispatchAction({
       type: 'PLAY_DEV_CARD',
       playerId: localPlayerId,
@@ -679,22 +754,30 @@ export default function GamePage() {
   };
 
   const handleDiscard = (resources: Record<ResourceType, number>) => {
+    soundManager.playClick();
     dispatchAction({ type: 'DISCARD_RESOURCES', playerId: localPlayerId, resources });
   };
 
   const handleSteal = (victimId: string) => {
+    soundManager.playClick();
     dispatchAction({ type: 'STEAL_RESOURCE', playerId: localPlayerId, victimId });
   };
 
   const handlePlayAgain = () => {
+    soundManager.playClick();
     const storedCount = Number(sessionStorage.getItem('hexara_player_count') || '4');
     const storedScenarioId = sessionStorage.getItem('hexara_scenario_id') || 'first_island';
     const storedScenarioName = sessionStorage.getItem('hexara_scenario_name') || 'The First Island';
     const storedVp = Number(sessionStorage.getItem('hexara_vp_target') || '10');
     const storedSeed = Date.now();
+    sessionStorage.setItem('hexara_board_seed', String(storedSeed));
+    sessionStorage.removeItem('hexara_active_game_state');
+
+    const persistedId = localStorage.getItem('hexara_player_id') || sessionStorage.getItem('hexara_player_id') || localPlayerId;
+    const persistedName = localStorage.getItem('hexara_username') || sessionStorage.getItem('hexara_username') || 'Captain Voyager';
 
     const playerList = [
-      { id: localPlayerId, username: 'Captain Amber' },
+      { id: persistedId, username: persistedName },
       { id: 'ai_1', username: 'Candamir (Bot)', isAi: true },
       { id: 'ai_2', username: 'Louis (Bot)', isAi: true },
     ];
@@ -781,6 +864,8 @@ export default function GamePage() {
         onEndTurn={handleEndTurn}
         onConfirmPlacement={handleConfirmPlacement}
         onPlayDevCard={handlePlayDevCard}
+        turnDeadline={turnDeadline}
+        connectionStatus={connectionStatus}
       />
       <BuildModal onBuyDevCard={handleBuyDevCard} />
       <TradeModal

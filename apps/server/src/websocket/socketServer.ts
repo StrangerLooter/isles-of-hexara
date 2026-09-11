@@ -246,6 +246,19 @@ export function setupSocketServer(httpServer: HttpServer): {
       }
     });
 
+    // D2. LOBBY: Update Settings (e.g. Turn Duration, VP)
+    socket.on('client:update_lobby_settings', (data: any) => {
+      const code = data?.code || currentGameCode;
+      if (!code || !data?.settings) return;
+      const result = lobbyManager.updateLobbySettings(code, userId, data.settings);
+      if (result.success && result.lobby) {
+        io.to(`game:${result.lobby.code}`).emit(
+          SERVER_EVENTS.LOBBY_STATE,
+          lobbyManager.toPayload(result.lobby)
+        );
+      }
+    });
+
     // E. LOBBY: Leave Game
     socket.on(CLIENT_EVENTS.LEAVE_GAME, (data: unknown) => {
       const parsed = leaveGameSchema.safeParse(data);
@@ -284,13 +297,27 @@ export function setupSocketServer(httpServer: HttpServer): {
         return;
       }
 
-      // Initialize game state and broadcast
-      const game = roomManager.createGameFromLobby(startRes.lobby, startRes.players);
-      io.to(`game:${code}`).emit(
-        SERVER_EVENTS.LOBBY_STATE,
-        lobbyManager.toPayload(startRes.lobby)
-      );
-      io.to(`game:${code}`).emit(SERVER_EVENTS.GAME_STATE, game);
+      // Synchronized 3 -> 2 -> 1 -> START countdown before launching match
+      io.to(`game:${code}`).emit(SERVER_EVENTS.COUNTDOWN, { count: 3, message: 'Setting sail in 3...' });
+
+      setTimeout(() => {
+        io.to(`game:${code}`).emit(SERVER_EVENTS.COUNTDOWN, { count: 2, message: 'Setting sail in 2...' });
+      }, 1000);
+
+      setTimeout(() => {
+        io.to(`game:${code}`).emit(SERVER_EVENTS.COUNTDOWN, { count: 1, message: 'Setting sail in 1...' });
+      }, 2000);
+
+      setTimeout(() => {
+        io.to(`game:${code}`).emit(SERVER_EVENTS.COUNTDOWN, { count: 0, message: 'Voyage begins!' });
+        // Initialize game state and broadcast
+        const game = roomManager.createGameFromLobby(startRes.lobby, startRes.players);
+        io.to(`game:${code}`).emit(
+          SERVER_EVENTS.LOBBY_STATE,
+          lobbyManager.toPayload(startRes.lobby)
+        );
+        roomManager.broadcastGameState(game.id, game, code);
+      }, 3000);
     });
 
     // G. GAME ACTIONS: Intercepted and routed through ActionRegistry

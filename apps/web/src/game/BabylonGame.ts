@@ -123,9 +123,11 @@ export class BabylonGame {
     window.addEventListener('resize', this.handleResize);
     setTimeout(() => {
       this.engine.resize();
+      this.adjustCameraForViewport();
     }, 50);
     setTimeout(() => {
       this.engine.resize();
+      this.adjustCameraForViewport();
     }, 200);
   }
 
@@ -202,7 +204,50 @@ export class BabylonGame {
 
   private handleResize = () => {
     this.engine.resize();
+    this.adjustCameraForViewport();
   };
+
+  public adjustCameraForViewport(): void {
+    if (!this.camera) return;
+    const aspect = this.engine.getAspectRatio(this.camera);
+    // When viewport aspect is narrow (mobile portrait, tablet, or split screen),
+    // increase the camera radius so the entire 19-hex archipelago board fits comfortably without clipping.
+    if (this.currentCameraMode === 'tactical') {
+      if (aspect < 0.75) {
+        this.camera.radius = 48;
+      } else if (aspect < 1.1) {
+        this.camera.radius = 38;
+      } else {
+        this.camera.radius = 32;
+      }
+    } else {
+      if (aspect < 0.75) {
+        this.camera.radius = 50;
+      } else if (aspect < 1.1) {
+        this.camera.radius = 42;
+      } else if (aspect < 1.4) {
+        this.camera.radius = 38;
+      } else {
+        const height = typeof window !== 'undefined' ? window.innerHeight : 800;
+        if (height < 500) {
+          // Phone in landscape mode: needs slightly higher radius to avoid top/bottom bar clipping
+          this.camera.radius = 38;
+        } else {
+          this.camera.radius = 34;
+        }
+      }
+    }
+  }
+
+  public zoomIn(): void {
+    if (!this.camera) return;
+    this.camera.radius = Math.max(this.camera.lowerRadiusLimit || 16, this.camera.radius - 4);
+  }
+
+  public zoomOut(): void {
+    if (!this.camera) return;
+    this.camera.radius = Math.min(this.camera.upperRadiusLimit || 54, this.camera.radius + 4);
+  }
 
   /**
    * Creates the polished wooden tavern tabletop beneath the archipelago board
@@ -1383,6 +1428,7 @@ export class BabylonGame {
 
   public resetCamera(): void {
     this.setCameraMode('perspective');
+    this.adjustCameraForViewport();
   }
 
   /**
