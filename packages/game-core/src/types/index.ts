@@ -77,6 +77,8 @@ export interface PlayerState {
   settlementsRemaining: number;
   citiesRemaining: number;
   devCards: DevCardType[];
+  boughtDevCardsThisTurn?: DevCardType[];
+  hasPlayedDevCardThisTurn?: boolean;
   playedKnights: number;
   longestRoad: boolean;
   largestArmy: boolean;
@@ -120,6 +122,7 @@ export interface GameState {
   longestRoadLength: number;
   pendingDiscards: Record<string, number>;
   robberEligibleVictimIds: string[];
+  returnPhaseAfterRobber?: GamePhase;
   activeTrade: ActiveTrade | null;
   winnerId: string | null;
   targetVictoryPoints?: number;

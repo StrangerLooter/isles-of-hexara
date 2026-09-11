@@ -87,6 +87,8 @@ export function createInitialGameState(
       settlementsRemaining: INITIAL_PIECE_LIMITS.settlements,
       citiesRemaining: INITIAL_PIECE_LIMITS.cities,
       devCards: [],
+      boughtDevCardsThisTurn: [],
+      hasPlayedDevCardThisTurn: false,
       playedKnights: 0,
       longestRoad: false,
       largestArmy: false,
@@ -196,10 +198,35 @@ function updateLargestArmy(state: GameState): void {
   state.largestArmyOwnerId = leaderId;
 }
 
+/**
+ * Checks if the active player has met or exceeded the victory condition on their turn
+ */
+export function applyVictoryCheck(state: GameState): boolean {
+  if (state.phase === 'FINISHED') return true;
+  const activePlayerId = state.playerOrder[state.currentPlayerIndex];
+  const activePlayer = state.players[activePlayerId];
+  if (!activePlayer) return false;
+
+  const requiredVp = state.targetVictoryPoints ?? VICTORY_POINTS_TARGET;
+  if (activePlayer.victoryPoints >= requiredVp) {
+    state.winnerId = activePlayerId;
+    state.phase = 'FINISHED';
+    state.logs.push(
+      `🎉 VICTORY! ${activePlayer.username} has reached ${activePlayer.victoryPoints} Victory Points and won the match!`
+    );
+    return true;
+  }
+  return false;
+}
+
 export function executeGameAction(
   state: GameState,
   action: GameAction
 ): { success: boolean; newState: GameState; error?: string } {
+  if (state.phase === 'FINISHED') {
+    return { success: false, newState: state, error: 'Game has already finished' };
+  }
+
   const next = JSON.parse(JSON.stringify(state)) as GameState;
   next.version += 1;
   next.updatedAt = Date.now();
@@ -227,6 +254,7 @@ export function executeGameAction(
       next.logs.push(`${activePlayer.username} rolled ${diceResult.total} [${diceResult.dice1} + ${diceResult.dice2}].`);
 
       if (diceResult.total === 7) {
+        next.returnPhaseAfterRobber = 'MAIN';
         // Robber activated: check for hand limits (>7 cards)
         const discardsNeeded: Record<string, number> = {};
         for (const [pid, p] of Object.entries(next.players)) {
@@ -317,8 +345,11 @@ export function executeGameAction(
 
       // Determine eligible victims
       const victims = getRobberVictims(next, action.hexId, action.playerId);
+      const targetPhase = next.returnPhaseAfterRobber || 'MAIN';
+
       if (victims.length === 0) {
-        next.phase = 'MAIN';
+        next.phase = targetPhase;
+        next.returnPhaseAfterRobber = undefined;
       } else if (victims.length === 1) {
         // Automatic single victim theft
         const victim = next.players[victims[0]];
@@ -333,7 +364,8 @@ export function executeGameAction(
           activePlayer.resources[stolen] += 1;
           next.logs.push(`${activePlayer.username} stole 1 card from ${victim.username}.`);
         }
-        next.phase = 'MAIN';
+        next.phase = targetPhase;
+        next.returnPhaseAfterRobber = undefined;
       } else {
         next.robberEligibleVictimIds = victims;
         next.phase = 'ROBBER_STEAL';
@@ -368,7 +400,8 @@ export function executeGameAction(
       }
 
       next.robberEligibleVictimIds = [];
-      next.phase = 'MAIN';
+      next.phase = next.returnPhaseAfterRobber || 'MAIN';
+      next.returnPhaseAfterRobber = undefined;
       return { success: true, newState: next };
     }
 
@@ -409,6 +442,7 @@ export function executeGameAction(
       next.longestRoadLength = lrResult.playerLengths[lrResult.newOwnerId ?? ''] || 0;
 
       recalculateAllVictoryPoints(next);
+      applyVictoryCheck(next);
       next.logs.push(`${player.username} built a settlement.`);
 
       return { success: true, newState: next };
@@ -462,6 +496,7 @@ export function executeGameAction(
       next.longestRoadLength = lrResult.playerLengths[lrResult.newOwnerId ?? ''] || 0;
 
       recalculateAllVictoryPoints(next);
+      applyVictoryCheck(next);
       next.logs.push(`${player.username} paved a road.`);
 
       // Setup round progression
@@ -533,6 +568,7 @@ export function executeGameAction(
       player.settlementsRemaining += 1; // Settlement piece returned to available pool!
 
       recalculateAllVictoryPoints(next);
+      applyVictoryCheck(next);
       next.logs.push(`${player.username} upgraded a settlement to a Fortified City.`);
 
       return { success: true, newState: next };
@@ -557,8 +593,10 @@ export function executeGameAction(
 
       const drawnCard = next.developmentDeck.shift()!;
       player.devCards.push(drawnCard);
+      player.boughtDevCardsThisTurn = [...(player.boughtDevCardsThisTurn || []), drawnCard];
 
       recalculateAllVictoryPoints(next);
+      applyVictoryCheck(next);
       next.logs.push(`${player.username} purchased a development card.`);
 
       return { success: true, newState: next };
@@ -569,13 +607,40 @@ export function executeGameAction(
         return { success: false, newState: state, error: 'Not your turn to play development cards' };
       }
 
+      // Allowed in ROLLING (pre-roll) or MAIN phase
+      if (next.phase !== 'ROLLING' && next.phase !== 'MAIN') {
+        return { success: false, newState: state, error: 'Cannot play development cards in current phase' };
+      }
+
       const player = next.players[action.playerId];
-      const cardIdx = player.devCards.indexOf(action.card);
-      if (cardIdx === -1) {
+      const cardCount = (player.devCards || []).filter((c) => c === action.card).length;
+      if (cardCount === 0) {
         return { success: false, newState: state, error: 'You do not own this card' };
       }
 
+      // One-dev-card-per-turn restriction (VP cards exempt)
+      if (action.card !== 'victory_point' && player.hasPlayedDevCardThisTurn) {
+        return { success: false, newState: state, error: 'May only play one development card per turn' };
+      }
+
+      // Cannot play a card on the turn it was purchased (VP cards exempt)
+      if (action.card !== 'victory_point') {
+        const boughtThisTurnCount = (player.boughtDevCardsThisTurn || []).filter((c) => c === action.card).length;
+        if (cardCount <= boughtThisTurnCount) {
+          return {
+            success: false,
+            newState: state,
+            error: 'Cannot play a development card on the turn it was purchased',
+          };
+        }
+      }
+
+      const cardIdx = player.devCards.indexOf(action.card);
       player.devCards.splice(cardIdx, 1);
+      if (action.card !== 'victory_point') {
+        player.hasPlayedDevCardThisTurn = true;
+      }
+
       next.playedDevelopmentCards.push({
         card: action.card,
         playerId: action.playerId,
@@ -588,6 +653,7 @@ export function executeGameAction(
         recalculateAllVictoryPoints(next);
 
         next.logs.push(`${player.username} summoned a Knight (Total: ${player.playedKnights}).`);
+        next.returnPhaseAfterRobber = next.phase === 'ROLLING' ? 'ROLLING' : 'MAIN';
         next.phase = 'ROBBER_MOVE';
       } else if (action.card === 'year_of_plenty') {
         const [res1, res2] = action.params?.yearOfPlentyResources || ['grain', 'ore'];
@@ -635,6 +701,7 @@ export function executeGameAction(
         next.logs.push(`${player.username} played Road Building!`);
       }
 
+      applyVictoryCheck(next);
       return { success: true, newState: next };
     }
 
@@ -782,6 +849,10 @@ export function executeGameAction(
       next.phase = 'ROLLING';
 
       const newPlayer = next.players[next.playerOrder[next.currentPlayerIndex]];
+      if (newPlayer) {
+        newPlayer.hasPlayedDevCardThisTurn = false;
+        newPlayer.boughtDevCardsThisTurn = [];
+      }
       next.logs.push(`Turn ${next.turnNumber}: ${newPlayer.username}'s turn begins.`);
 
       return { success: true, newState: next };
