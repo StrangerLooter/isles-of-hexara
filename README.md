@@ -4,7 +4,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
 [![Babylon.js](https://img.shields.io/badge/Babylon.js-7.0+-red.svg)](https://www.babylonjs.com/)
 [![React](https://img.shields.io/badge/React-18+-cyan.svg)](https://react.dev/)
-[![Deployment: Vercel](https://img.shields.io/badge/Deployment-Vercel-black.svg)](https://islesofhexara.vercel.app/)
+[![Deployment: Vercel](https://img.shields.io/badge/Deployment-Vercel-black.svg)](https://isles-of-hexara.vercel.app/)
 
 **Isles of Hexara** is a next-generation, real-time 3D strategy board game inspired by the legendary **Klaus Teuber Catan 25th Anniversary Edition Game Rules & Almanac**. Built from the ground up with high-fidelity 3D graphics (Babylon.js), a deterministic rules engine (`@hexara/game-core`), and a desktop-first responsive UI.
 
@@ -118,7 +118,7 @@ To deploy the web app on Vercel:
    pnpm --filter @hexara/shared build && pnpm --filter @hexara/game-core build && pnpm --filter @hexara/protocol build && pnpm --filter @hexara/web build
    ```
 4. Set the **Output Directory** to `dist`.
-5. Deploy to `https://islesofhexara.vercel.app/`.
+5. Deploy to `https://isles-of-hexara.vercel.app/`.
 
 ---
 

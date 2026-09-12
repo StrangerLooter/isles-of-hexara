@@ -21,7 +21,7 @@ services:
       - key: HOST
         value: 0.0.0.0
       - key: CORS_ORIGIN
-        value: https://islesofhexara.vercel.app,http://localhost:3000
+        value: https://isles-of-hexara.vercel.app,https://islesofhexara.vercel.app,http://localhost:3000
       - key: JWT_SECRET
         generateValue: true
       - key: MONGODB_URI

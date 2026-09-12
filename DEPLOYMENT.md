@@ -13,7 +13,7 @@ This guide provides end-to-end instructions for deploying the **Isles of Hexara*
 ┌───────────────────────────────┐                  ┌─────────────────────────────────┐
 │     Frontend (apps/web)       │                  │     Backend (apps/server)       │
 │     Hosted on Vercel SPA      │                  │     Hosted on Render (Node.js)  │
-│  islesofhexara.vercel.app     │                  │  isles-of-hexara.onrender.com   │
+│  isles-of-hexara.vercel.app   │                  │  isles-of-hexara.onrender.com   │
 └──────────────┬────────────────┘                  └────────────────┬────────────────┘
                │                                                    │
                │ HTTP Guest Auth / REST API                         │
@@ -71,7 +71,7 @@ In Render's **Environment** tab, set the following environment variables:
 | `NODE_ENV` | Runtime environment | `production` | Yes |
 | `PORT` | HTTP & WebSocket Port | `10000` (Render default) | Yes |
 | `HOST` | Server bind host | `0.0.0.0` | Yes |
-| `CORS_ORIGIN` | Comma-separated allowed origins | `https://islesofhexara.vercel.app,http://localhost:3000` | Yes |
+| `CORS_ORIGIN` | Comma-separated allowed origins | `https://isles-of-hexara.vercel.app,http://localhost:3000` | Yes |
 | `JWT_SECRET` | Secret key for signing guest JWT tokens | `generate a 32+ char random string` | Yes |
 | `MONGODB_URI` | MongoDB connection URI | `mongodb+srv://...` (or leave empty for memory mode) | Optional |
 | `REDIS_URL` | Redis connection URL | `redis://...` (or leave empty for memory mode) | Optional |

@@ -18,6 +18,7 @@ export async function createServer() {
   const defaultOrigins = [
     'http://localhost:3000',
     'http://127.0.0.1:3000',
+    'https://isles-of-hexara.vercel.app',
     'https://islesofhexara.vercel.app',
   ];
 
