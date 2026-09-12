@@ -17,6 +17,7 @@ export const AlmanacModal: React.FC<AlmanacModalProps> = ({
 
   const rulesTopics = [
     { id: 'overview', title: 'Game Overview & Flow' },
+    { id: 'twoplayer', title: 'Two-Player Duel Rules & Balancing' },
     { id: 'setup', title: 'Setup Phase & Snake Draft' },
     { id: 'production', title: 'Resource Production & Dice' },
     { id: 'odds', title: 'Dice Roll Probabilities' },
@@ -163,6 +164,41 @@ export const AlmanacModal: React.FC<AlmanacModalProps> = ({
                 <p className="text-xs italic text-[#5c3a21]">
                   Tip: In modern and tournament play (Combined Trade/Build Phase), players can trade and build interchangeably in any order!
                 </p>
+              </div>
+            )}
+
+            {/* TWO-PLAYER DUEL MODE */}
+            {selectedTopic === 'twoplayer' && (
+              <div className="space-y-4">
+                <h3 className="text-xl font-black uppercase tracking-wider text-[#7a2e0e] border-b-2 border-[#b88647]/50 pb-2">
+                  Two-Player Online Duel Rules & Balancing
+                </h3>
+                <p>
+                  In <strong>Isles of Hexara Two-Player Duel Mode</strong>, exactly two real captains contest the archipelago. No artificial bot fillers are injected into online rooms.
+                </p>
+                <div className="bg-[#ebdcb9] p-3.5 rounded-xl border border-[#b88647] space-y-2">
+                  <h4 className="font-bold text-sm text-[#5c1e08]">Key Duel Mechanics:</h4>
+                  <ul className="list-disc pl-5 space-y-1.5 text-xs">
+                    <li>
+                      <strong>Turn Rotation & Snake Draft:</strong> Initial setup follows P1 &rarr; P2 &rarr; P2 &rarr; P1. Turns then alternate smoothly between both captains.
+                    </li>
+                    <li>
+                      <strong>Direct Trade Negotiation:</strong> Domestic trades occur exclusively between the two captains. If your adversary declines, domestic barter cannot proceed&mdash;making coastal <strong>Harbors (3:1 and 2:1)</strong> exceptionally valuable!
+                    </li>
+                    <li>
+                      <strong>Robber Dynamics:</strong> Rolling a 7 or playing a Knight card directs the Robber onto your adversary's terrain. The victim loses 1 random resource card (if holding cards) and production on that hex is halted.
+                    </li>
+                    <li>
+                      <strong>Longest Road & Largest Army:</strong> Still require a minimum of 5 road segments and 3 knights respectively (+2 VP each). Contesting these trophies is decisive in 1v1 duels!
+                    </li>
+                    <li>
+                      <strong>Victory Target:</strong> Standard goal is 10 Victory Points (host configurable to 8 VP for lightning duels or 12 VP for prolonged wars of attrition).
+                    </li>
+                  </ul>
+                </div>
+                <div className="p-3 bg-amber-100 rounded-xl border-l-4 border-amber-600 text-xs">
+                  <strong>Captain's Strategic Advice:</strong> In a 2-player duel, early territory claiming is critical. Expand rapidly towards specialized coastal harbors (2:1 Ore or Grain) to bypass reliance on your opponent's trade consent.
+                </div>
               </div>
             )}
 

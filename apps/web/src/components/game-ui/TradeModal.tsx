@@ -250,9 +250,9 @@ export const TradeModal: React.FC<TradeModalProps> = ({
                 }`}
               >
                 {!hasEnoughMaritime
-                  ? `Need ${maritimeRate} ${giving}`
+                  ? `Need ${maritimeRate - givingCount} more ${giving}`
                   : giving === receiving
-                  ? 'Pick Different'
+                  ? 'Pick Different Resource'
                   : `Trade ${maritimeRate} ${giving} → 1 ${receiving}`}
               </button>
             </div>

@@ -49,27 +49,24 @@ export const ResourceFlyAnimation: React.FC<ResourceFlyAnimationProps> = ({
       const dockTargetX = windowWidth / 2;
       const dockTargetY = windowHeight - 40;
 
-      (Object.keys(RESOURCE_META) as ResourceType[]).forEach((res) => {
+      (Object.keys(RESOURCE_META) as ResourceType[]).forEach((res, resIdx) => {
         const prevVal = prevResourcesRef.current?.[res] ?? 0;
         const currentVal = resources[res] ?? 0;
         const diff = currentVal - prevVal;
 
         if (diff > 0) {
-          for (let i = 0; i < Math.min(diff, 5); i++) {
-            const spreadX = (Math.random() - 0.5) * 160;
-            const spreadY = (Math.random() - 0.5) * 80;
-            newItems.push({
-              id: `${res}_${Date.now()}_${i}_${Math.random()}`,
-              type: 'resource',
-              icon: RESOURCE_META[res].icon,
-              label: `+${diff} ${RESOURCE_META[res].name}`,
-              color: RESOURCE_META[res].color,
-              startX: windowWidth / 2 + spreadX,
-              startY: windowHeight / 2 - 60 + spreadY,
-              targetX: dockTargetX + spreadX * 0.4,
-              targetY: dockTargetY,
-            });
-          }
+          const offsetX = (resIdx - 2) * 55;
+          newItems.push({
+            id: `${res}_${Date.now()}_${Math.random()}`,
+            type: 'resource',
+            icon: RESOURCE_META[res].icon,
+            label: `+${diff} ${RESOURCE_META[res].name}`,
+            color: RESOURCE_META[res].color,
+            startX: windowWidth / 2 + offsetX,
+            startY: windowHeight / 2 - 40,
+            targetX: dockTargetX + offsetX * 0.4,
+            targetY: dockTargetY,
+          });
         }
       });
 

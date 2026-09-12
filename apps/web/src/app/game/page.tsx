@@ -33,6 +33,7 @@ import { useGameStore } from '../../store/gameStore';
 import { ChatMessage } from '../../components/game-ui/ChatLogModal';
 import { soundManager } from '../../game/SoundManager';
 import { SERVER_URL } from '../../lib/serverUrl';
+import { formatGameError } from '../../lib/errorFormatter';
 
 export default function GamePage() {
   const {
@@ -241,7 +242,7 @@ export default function GamePage() {
 
       socket.on(SERVER_EVENTS.ERROR, (err: ServerErrorPayload) => {
         soundManager.playError();
-        setErrorToast(err.message);
+        setErrorToast(formatGameError(err.message));
         setTimeout(() => setErrorToast(null), 4000);
       });
 
@@ -649,8 +650,8 @@ export default function GamePage() {
         }
       } else {
         soundManager.playError();
-        setErrorToast(res.error || 'Action failed');
-        setTimeout(() => setErrorToast(null), 3000);
+        setErrorToast(formatGameError(res.error));
+        setTimeout(() => setErrorToast(null), 3500);
       }
     }
   };

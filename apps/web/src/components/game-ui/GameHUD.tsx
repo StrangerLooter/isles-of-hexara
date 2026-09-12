@@ -125,6 +125,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     setTimeout(() => setCopiedRoomCode(false), 2000);
   };
 
+  const [isRolling, setIsRolling] = useState(false);
+  const handleRollAction = () => {
+    if (isRolling) return;
+    setIsRolling(true);
+    soundManager.playDiceRoll();
+    onRollDice?.();
+    setTimeout(() => setIsRolling(false), 1200);
+  };
+
   // Local User Profile — read from the same persisted localStorage as the main page
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
     if (typeof window !== 'undefined') {
@@ -965,18 +974,6 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </>
           ) : (
             <>
-              {/* Roll Button */}
-              {canRoll && (
-                <button
-                  onClick={onRollDice}
-                  className="h-11 sm:h-13 px-3 sm:px-4 rounded-xl sm:rounded-2xl flex items-center justify-center gap-1.5 sm:gap-2 shadow-xl border-2 bg-gradient-to-b from-[#f59e0b] to-[#b45309] border-amber-200 text-[#1a0f08] hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_0_20px_rgba(245,158,11,0.7)] animate-bounce font-black transition-all"
-                  title="Roll the Dice"
-                >
-                  <span className="text-lg sm:text-xl">🎲</span>
-                  <span className="text-xs sm:text-sm font-black uppercase tracking-wider font-serif">Roll</span>
-                </button>
-              )}
-
               {/* Build Button */}
               <button
                 onClick={() => setBuildModalOpen(true)}
@@ -1025,22 +1022,36 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 )}
               </button>
 
-              {/* Visually Prominent End Turn Button */}
-              <button
-                onClick={canRoll ? onRollDice : onEndTurn}
-                disabled={!canRoll && !canEndTurn}
-                className={`h-11 sm:h-13 px-4 sm:px-6 rounded-xl sm:rounded-2xl flex items-center justify-center gap-2 shadow-2xl border-2 transition-all ${
-                  canRoll || canEndTurn
-                    ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 border-amber-100 text-[#1a0f08] hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_0_25px_rgba(245,158,11,0.85)] ring-2 ring-amber-300/70 font-black animate-pulse'
-                    : 'bg-[#241710] border-amber-900/40 text-amber-200/30 cursor-not-allowed opacity-50'
-                }`}
-                title="End Your Turn"
-              >
-                <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
-                <span className="text-xs sm:text-sm font-black uppercase tracking-widest font-serif">
-                  End Turn
-                </span>
-              </button>
+              {/* Primary Action Button: ROLL DICE or END TURN */}
+              {canRoll ? (
+                <button
+                  onClick={handleRollAction}
+                  disabled={isRolling}
+                  className="h-11 sm:h-13 px-4 sm:px-6 rounded-xl sm:rounded-2xl flex items-center justify-center gap-2 shadow-2xl border-2 bg-gradient-to-r from-amber-400 via-amber-500 to-yellow-500 border-amber-100 text-[#1a0f08] hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_0_25px_rgba(245,158,11,0.85)] ring-2 ring-amber-300/70 font-black animate-bounce transition-all"
+                  title="Roll the Dice to Produce Resources"
+                >
+                  <span className="text-lg sm:text-xl">🎲</span>
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-widest font-serif">
+                    {isRolling ? 'Rolling...' : 'Roll Dice'}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  onClick={onEndTurn}
+                  disabled={!canEndTurn}
+                  className={`h-11 sm:h-13 px-4 sm:px-6 rounded-xl sm:rounded-2xl flex items-center justify-center gap-2 shadow-2xl border-2 transition-all ${
+                    canEndTurn
+                      ? 'bg-gradient-to-r from-amber-500 via-amber-600 to-orange-700 border-amber-200 text-amber-50 hover:brightness-110 hover:scale-105 active:scale-95 cursor-pointer shadow-[0_0_25px_rgba(245,158,11,0.6)] font-black'
+                      : 'bg-[#241710] border-amber-900/40 text-amber-200/30 cursor-not-allowed opacity-50'
+                  }`}
+                  title="End Your Turn"
+                >
+                  <Play className="w-4 h-4 sm:w-5 sm:h-5 fill-current" />
+                  <span className="text-xs sm:text-sm font-black uppercase tracking-widest font-serif">
+                    End Turn
+                  </span>
+                </button>
+              )}
             </>
           )}
         </div>

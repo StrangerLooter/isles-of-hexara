@@ -35,6 +35,7 @@ import { CollectionModal } from '../components/modals/CollectionModal';
 import { ShopModal } from '../components/modals/ShopModal';
 import { GuildsModal } from '../components/modals/GuildsModal';
 import { ScenarioModal } from '../components/lobby/ScenarioModal';
+import { StrategicPlayModal } from '../components/lobby/StrategicPlayModal';
 import { LobbyRoomModal } from '../components/lobby/LobbyRoomModal';
 import { CharacterModelViewer } from '../components/lobby/CharacterModelViewer';
 import { FullscreenButton } from '../components/common/FullscreenButton';
@@ -178,6 +179,8 @@ export default function HomePage() {
   });
   const [hasActiveGame, setHasActiveGame] = useState(false);
   const [activeGameRoom, setActiveGameRoom] = useState('');
+  const [activeGameDetails, setActiveGameDetails] = useState('');
+  const [isStrategicPlayOpen, setStrategicPlayOpen] = useState(false);
 
   // Check URL parameters & local active games
   useEffect(() => {
@@ -186,9 +189,28 @@ export default function HomePage() {
     // Check if user has active game to continue
     const savedRoom = sessionStorage.getItem('hexara_room_code');
     const savedState = sessionStorage.getItem('hexara_active_game_state');
-    if (savedRoom || savedState) {
+    if (savedState) {
+      try {
+        const parsed = JSON.parse(savedState);
+        // Only consider active if game has not concluded
+        if (parsed.phase && parsed.phase !== 'FINISHED') {
+          setHasActiveGame(true);
+          setActiveGameRoom(savedRoom || parsed.id || 'HEXARA');
+          setActiveGameDetails(`Turn ${parsed.turnNumber || 1} • ${parsed.playerOrder?.length || 2} Captains`);
+        } else {
+          setHasActiveGame(false);
+        }
+      } catch {
+        if (savedRoom) {
+          setHasActiveGame(true);
+          setActiveGameRoom(savedRoom);
+          setActiveGameDetails('Active Session');
+        }
+      }
+    } else if (savedRoom) {
       setHasActiveGame(true);
-      setActiveGameRoom(savedRoom || 'HEXARA');
+      setActiveGameRoom(savedRoom);
+      setActiveGameDetails('Active Match');
     }
 
     const urlParams = new URLSearchParams(window.location.search);
@@ -208,14 +230,14 @@ export default function HomePage() {
     setAuthOpen(false);
   };
 
-  const handleStartSolo = () => {
+  const handleStartSolo = (playerCount: 2 | 3 | 4 = 4) => {
     soundManager.playClick();
     setActiveRoomCode('SOLO');
     setIsRoomHost(true);
     sessionStorage.setItem('hexara_match_mode', 'solo');
     sessionStorage.setItem('hexara_scenario_id', 'first_island');
     sessionStorage.setItem('hexara_scenario_name', 'The First Island');
-    sessionStorage.setItem('hexara_player_count', '4');
+    sessionStorage.setItem('hexara_player_count', String(playerCount));
     sessionStorage.setItem('hexara_vp_target', '10');
     sessionStorage.setItem('hexara_board_seed', String(Math.floor(100000 + Math.random() * 900000)));
     sessionStorage.setItem('hexara_turn_duration', '60');
@@ -226,18 +248,72 @@ export default function HomePage() {
       scenarioId: 'first_island',
       scenarioName: 'The First Island',
       targetVictoryPoints: 10,
-      maxPlayers: 4,
+      maxPlayers: playerCount,
       seed: Math.floor(100000 + Math.random() * 900000),
       turnDurationSeconds: 60,
       mode: 'solo',
     });
 
+    setStrategicPlayOpen(false);
+    setLobbyModalOpen(true);
+  };
+
+  const handleCreateOnlineFromStrategic = (
+    playerCount: 2 | 3 | 4,
+    scenarioId: string,
+    victoryPoints: number
+  ) => {
+    const code = generateRoomCode();
+    setActiveRoomCode(code);
+    setIsRoomHost(true);
+    const scenarioName =
+      scenarioId === 'ore_for_wool'
+        ? 'Ore For Wool'
+        : scenarioId === 'harbormaster'
+        ? 'The Harbormaster'
+        : 'The First Island';
+
+    sessionStorage.setItem('hexara_match_mode', 'online');
+    sessionStorage.setItem('hexara_room_code', code);
+    sessionStorage.setItem('hexara_scenario_id', scenarioId);
+    sessionStorage.setItem('hexara_scenario_name', scenarioName);
+    sessionStorage.setItem('hexara_player_count', String(playerCount));
+    sessionStorage.setItem('hexara_vp_target', String(victoryPoints));
+    const seed = Math.floor(100000 + Math.random() * 900000);
+    sessionStorage.setItem('hexara_board_seed', String(seed));
+    sessionStorage.setItem('hexara_turn_duration', '60');
+    sessionStorage.removeItem('hexara_active_game_state');
+
+    setLobbyCreateOptions({
+      scenarioId,
+      scenarioName,
+      targetVictoryPoints: victoryPoints,
+      maxPlayers: playerCount,
+      seed,
+      turnDurationSeconds: 60,
+      mode: 'online',
+    });
+
+    setStrategicPlayOpen(false);
+    setLobbyModalOpen(true);
+  };
+
+  const handleQuickPlay = () => {
+    handleCreateOnlineFromStrategic(2, 'first_island', 10);
+  };
+
+  const handleJoinFromStrategic = (code: string) => {
+    setActiveRoomCode(code);
+    setIsRoomHost(false);
+    sessionStorage.setItem('hexara_match_mode', 'online');
+    sessionStorage.setItem('hexara_room_code', code);
+    setStrategicPlayOpen(false);
     setLobbyModalOpen(true);
   };
 
   const handleOpenCreateOnline = () => {
     soundManager.playClick();
-    setScenarioOpen(true);
+    setStrategicPlayOpen(true);
   };
 
   const handleLaunchFromScenario = (options: {
@@ -518,15 +594,15 @@ export default function HomePage() {
           {hasActiveGame && (
             <div
               onClick={handleContinueVoyage}
-              className="absolute -top-16 z-30 px-5 py-2 rounded-2xl bg-gradient-to-r from-amber-950/90 via-[#451e0e]/95 to-amber-950/90 border-2 border-amber-400/80 shadow-[0_0_25px_rgba(245,158,11,0.5)] cursor-pointer hover:scale-105 transition-all flex items-center gap-2.5 animate-pulse"
+              className="absolute -top-16 z-30 px-6 py-2.5 rounded-2xl bg-gradient-to-r from-amber-950/95 via-[#451e0e]/95 to-amber-950/95 border-2 border-amber-400 shadow-[0_0_30px_rgba(245,158,11,0.6)] cursor-pointer hover:scale-105 transition-all flex items-center gap-3 animate-pulse"
             >
-              <RotateCcw className="w-4 h-4 text-amber-300" />
+              <RotateCcw className="w-5 h-5 text-amber-300 animate-spin-slow" />
               <div className="text-left">
-                <span className="text-[10px] uppercase font-black text-amber-300 tracking-wider block">
-                  Active Voyage Available
+                <span className="text-[11px] uppercase font-black text-amber-300 tracking-wider block">
+                  CONTINUE VOYAGE &bull; RESUME MATCH
                 </span>
-                <span className="text-[9px] text-amber-100 font-bold font-mono">
-                  Room: {activeGameRoom} &bull; Click to Resume
+                <span className="text-[10px] text-amber-100 font-bold font-mono">
+                  Room: {activeGameRoom} {activeGameDetails ? `• ${activeGameDetails}` : ''}
                 </span>
               </div>
               <ArrowRight className="w-4 h-4 text-amber-300 ml-1" />
@@ -636,25 +712,38 @@ export default function HomePage() {
           </button>
         </form>
 
-        {/* Right: Primary Action Buttons (Play Solo & Play Online) */}
+        {/* Right: Primary Action Buttons (Strategic Hierarchy) */}
         <div className="flex items-center gap-3">
           {/* Play Solo Button */}
           <button
-            onClick={handleStartSolo}
-            className="px-6 py-3.5 rounded-2xl bg-[#2b170c] hover:bg-[#3d2212] border-2 border-amber-500/70 text-amber-200 hover:text-white font-black text-sm uppercase tracking-wider flex items-center gap-2 shadow-lg transition-all active:scale-95"
+            onClick={() => handleStartSolo(4)}
+            className="px-5 py-3 rounded-2xl bg-[#2b170c] hover:bg-[#3d2212] border-2 border-amber-500/70 text-amber-200 hover:text-white font-black text-xs uppercase tracking-wider flex items-center gap-2 shadow-lg transition-all active:scale-95"
             title="Start Match vs AI Bots"
           >
-            <Bot className="w-5 h-5 text-amber-400" />
+            <Bot className="w-4 h-4 text-amber-400" />
             <span>Play Solo</span>
           </button>
 
-          {/* Massive Embossed Gold PLAY ONLINE Button */}
+          {/* Continue Voyage Button if active session */}
+          {hasActiveGame ? (
+            <button
+              onClick={handleContinueVoyage}
+              className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-amber-700 via-amber-600 to-yellow-600 text-slate-950 font-black text-sm md:text-base uppercase tracking-widest flex items-center gap-2.5 shadow-[0_0_25px_rgba(245,158,11,0.7)] active:scale-95 transition-all animate-pulse"
+              title="Resume ongoing voyage"
+            >
+              <RotateCcw className="w-5 h-5 text-slate-950" />
+              <span>Resume Voyage</span>
+            </button>
+          ) : null}
+
+          {/* Massive Embossed Gold PLAY / EXPEDITIONS Button */}
           <button
             onClick={handleOpenCreateOnline}
             className="catan-btn-gold px-8 py-3.5 rounded-2xl text-base md:text-lg font-black uppercase tracking-widest flex items-center gap-3 shadow-[0_10px_30px_rgba(245,158,11,0.6)] active:scale-95 transition-all"
+            title="Open Expeditions and Game Setup"
           >
             <span className="text-xl">⚔️</span>
-            <span>Play Online</span>
+            <span>{hasActiveGame ? 'New Expedition' : 'Play'}</span>
           </button>
         </div>
       </footer>
@@ -745,6 +834,18 @@ export default function HomePage() {
           setActiveRoomCode(code);
         }}
         onGameStarted={handleGameStartedFromLobby}
+      />
+      <StrategicPlayModal
+        isOpen={isStrategicPlayOpen}
+        onClose={() => setStrategicPlayOpen(false)}
+        onQuickPlay={handleQuickPlay}
+        onCreateOnline={handleCreateOnlineFromStrategic}
+        onJoinRoom={handleJoinFromStrategic}
+        onStartSolo={handleStartSolo}
+        onOpenAdvancedScenarios={() => {
+          setStrategicPlayOpen(false);
+          setScenarioOpen(true);
+        }}
       />
       <AuthModal
         isOpen={isAuthOpen}
