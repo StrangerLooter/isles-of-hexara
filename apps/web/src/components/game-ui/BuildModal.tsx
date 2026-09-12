@@ -55,7 +55,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
       label: 'Coastal Road',
       icon: <Hammer className="w-5 h-5 text-amber-300" />,
       cost: BUILDING_COSTS.road,
-      remaining: player.roadsRemaining,
+      remaining: player.roadsRemaining ?? 15,
       description: 'Connects settlements across island paths (15 max).',
     },
     {
@@ -63,7 +63,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
       label: 'Settlement Colony',
       icon: <Home className="w-5 h-5 text-amber-300" />,
       cost: BUILDING_COSTS.settlement,
-      remaining: player.settlementsRemaining,
+      remaining: player.settlementsRemaining ?? 5,
       description: 'Yields 1 resource from adjacent hexes. Worth 1 VP.',
     },
     {
@@ -71,7 +71,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
       label: 'Fortified City',
       icon: <Landmark className="w-5 h-5 text-amber-300" />,
       cost: BUILDING_COSTS.city,
-      remaining: player.citiesRemaining,
+      remaining: player.citiesRemaining ?? 4,
       description: 'Upgrades a settlement. Yields 2 resources. Worth 2 VP.',
     },
     {
@@ -79,7 +79,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
       label: 'Development Card',
       icon: <Scroll className="w-5 h-5 text-purple-300" />,
       cost: BUILDING_COSTS.dev_card,
-      remaining: gameState.developmentDeck.length,
+      remaining: gameState.developmentDeck?.length ?? 0,
       description: 'Draw Knights, Progress cards, or hidden Victory Points.',
     },
   ];
@@ -160,7 +160,7 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
             {items.map((item) => {
               const isDevCard = item.type === 'dev_card';
               const canAfford = Object.entries(item.cost).every(
-                ([res, count]) => (player.resources[res as keyof typeof player.resources] ?? 0) >= count
+                ([res, count]) => (player.resources?.[res as keyof typeof player.resources] ?? 0) >= count
               );
 
               const canBuild =
@@ -180,9 +180,9 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
                 }
                 if (!canAfford) {
                   const missing = Object.entries(item.cost)
-                    .filter(([res, count]) => (player.resources[res as keyof typeof player.resources] ?? 0) < count)
+                    .filter(([res, count]) => (player.resources?.[res as keyof typeof player.resources] ?? 0) < count)
                     .map(([res, count]) => {
-                      const have = player.resources[res as keyof typeof player.resources] ?? 0;
+                      const have = player.resources?.[res as keyof typeof player.resources] ?? 0;
                       return `${count - have} ${res}`;
                     })
                     .join(', ');

@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: isles-of-hexara-server
+    name: isles-of-hexara
     env: node
     plan: free
     region: oregon

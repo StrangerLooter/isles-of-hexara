@@ -510,6 +510,7 @@ export function setupSocketServer(httpServer: HttpServer): {
       if (currentGameCode) {
         socket.to(`game:${currentGameCode}`).emit('voice:peer-left', {
           peerId: userId,
+          socketId: socket.id,
         });
       }
     });
@@ -520,6 +521,7 @@ export function setupSocketServer(httpServer: HttpServer): {
       if (currentGameCode) {
         socket.to(`game:${currentGameCode}`).emit('voice:peer-left', {
           peerId: userId,
+          socketId: socket.id,
         });
       }
       rateLimiter.cleanup(socket.id);

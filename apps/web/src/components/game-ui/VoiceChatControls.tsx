@@ -12,13 +12,23 @@ interface VoiceChatControlsProps {
   onSpeakingChange?: (isSpeaking: boolean) => void;
 }
 
-const ICE_SERVERS = {
-  iceServers: [
+function getIceServers(): RTCConfiguration {
+  const servers: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-  ],
-};
+  ];
+  const env = (import.meta as any).env ?? {};
+  if (env.VITE_TURN_SERVER_URL) {
+    const turnConfig: RTCIceServer = {
+      urls: env.VITE_TURN_SERVER_URL,
+    };
+    if (env.VITE_TURN_USERNAME) turnConfig.username = env.VITE_TURN_USERNAME;
+    if (env.VITE_TURN_CREDENTIAL) turnConfig.credential = env.VITE_TURN_CREDENTIAL;
+    servers.push(turnConfig);
+  }
+  return { iceServers: servers };
+}
 
 export const VoiceChatControls: React.FC<VoiceChatControlsProps> = ({
   roomCode,
@@ -42,6 +52,8 @@ export const VoiceChatControls: React.FC<VoiceChatControlsProps> = ({
   const vadRafRef = useRef<number | null>(null);
   const peerConnsRef = useRef<Record<string, RTCPeerConnection>>({});
   const remoteAudiosRef = useRef<Record<string, HTMLAudioElement>>({});
+  const peerIdToSocketRef = useRef<Record<string, string>>({});
+  const pendingCandidatesRef = useRef<Record<string, RTCIceCandidateInit[]>>({});
   const volumeRef = useRef(1);
 
   useEffect(() => {
@@ -76,6 +88,8 @@ export const VoiceChatControls: React.FC<VoiceChatControlsProps> = ({
       a.srcObject = null;
     });
     remoteAudiosRef.current = {};
+    peerIdToSocketRef.current = {};
+    pendingCandidatesRef.current = {};
     setIsJoined(false);
     setPeerCount(0);
   };
@@ -88,6 +102,7 @@ export const VoiceChatControls: React.FC<VoiceChatControlsProps> = ({
     const handlePeerJoined = async (data: { peerId: string; socketId: string; username: string }) => {
       if (!streamRef.current || data.peerId === localPlayerId) return;
 
+      peerIdToSocketRef.current[data.peerId] = data.socketId;
       const pc = createPeerConnection(data.socketId);
       peerConnsRef.current[data.socketId] = pc;
 
@@ -112,6 +127,7 @@ export const VoiceChatControls: React.FC<VoiceChatControlsProps> = ({
     }) => {
       if (data.senderPeerId === localPlayerId) return;
 
+      peerIdToSocketRef.current[data.senderPeerId] = data.senderSocketId;
       let pc = peerConnsRef.current[data.senderSocketId];
       if (!pc) {
         pc = createPeerConnection(data.senderSocketId);
@@ -121,6 +137,13 @@ export const VoiceChatControls: React.FC<VoiceChatControlsProps> = ({
       try {
         if (data.signal.type === 'offer') {
           await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+          // Apply any buffered early ICE candidates
+          const queued = pendingCandidatesRef.current[data.senderSocketId] || [];
+          for (const cand of queued) {
+            await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+          }
+          pendingCandidatesRef.current[data.senderSocketId] = [];
+
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           socket.emit('voice:signal', {
@@ -130,21 +153,49 @@ export const VoiceChatControls: React.FC<VoiceChatControlsProps> = ({
           setPeerCount(Object.keys(peerConnsRef.current).length);
         } else if (data.signal.type === 'answer') {
           await pc.setRemoteDescription(new RTCSessionDescription(data.signal));
+          // Apply any buffered early ICE candidates
+          const queued = pendingCandidatesRef.current[data.senderSocketId] || [];
+          for (const cand of queued) {
+            await pc.addIceCandidate(new RTCIceCandidate(cand)).catch(() => {});
+          }
+          pendingCandidatesRef.current[data.senderSocketId] = [];
         } else if (data.signal.candidate) {
-          await pc.addIceCandidate(new RTCIceCandidate(data.signal.candidate));
+          if (pc.remoteDescription && pc.remoteDescription.type) {
+            await pc.addIceCandidate(new RTCIceCandidate(data.signal.candidate)).catch(() => {});
+          } else {
+            if (!pendingCandidatesRef.current[data.senderSocketId]) {
+              pendingCandidatesRef.current[data.senderSocketId] = [];
+            }
+            pendingCandidatesRef.current[data.senderSocketId].push(data.signal.candidate);
+          }
         }
       } catch (err) {
         console.warn('[VoiceChat] Signal handling error:', err);
       }
     };
 
-    // 3. Peer left voice
-    const handlePeerLeft = (data: { peerId: string }) => {
-      // Find socket ID associated with peer if any, or close all matching
-      Object.entries(peerConnsRef.current).forEach(([sockId, pc]) => {
-        pc.close();
-        delete peerConnsRef.current[sockId];
-      });
+    // 3. Peer left voice - selectively close only the leaving peer
+    const handlePeerLeft = (data: { peerId: string; socketId?: string }) => {
+      const targetSockId =
+        data.socketId ||
+        peerIdToSocketRef.current[data.peerId] ||
+        Object.keys(peerConnsRef.current).find((sockId) => sockId === data.socketId);
+
+      if (targetSockId) {
+        const pc = peerConnsRef.current[targetSockId];
+        if (pc) {
+          pc.close();
+          delete peerConnsRef.current[targetSockId];
+        }
+        const audio = remoteAudiosRef.current[targetSockId];
+        if (audio) {
+          audio.pause();
+          audio.srcObject = null;
+          delete remoteAudiosRef.current[targetSockId];
+        }
+        delete pendingCandidatesRef.current[targetSockId];
+      }
+      delete peerIdToSocketRef.current[data.peerId];
       setPeerCount(Object.keys(peerConnsRef.current).length);
     };
 
@@ -160,7 +211,7 @@ export const VoiceChatControls: React.FC<VoiceChatControlsProps> = ({
   }, [socket, isJoined, localPlayerId]);
 
   const createPeerConnection = (targetSocketId: string): RTCPeerConnection => {
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+    const pc = new RTCPeerConnection(getIceServers());
 
     // Add local mic audio track
     if (streamRef.current) {

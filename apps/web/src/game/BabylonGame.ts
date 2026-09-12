@@ -14,6 +14,7 @@ import {
   StandardMaterial,
   Vector3,
 } from '@babylonjs/core';
+import { PointerEventTypes } from '@babylonjs/core/Events/pointerEvents.js';
 import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader.js';
 import '@babylonjs/loaders/glTF';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
@@ -122,6 +123,9 @@ export class BabylonGame {
     this.createTavernTabletop();
     this.createTabletopProps();
 
+    // Attach robust pointer picking observable
+    this.setupPointerInteraction();
+
     // Preload GLB Grim Reaper Robber Model instantly without delay
     this.preloadRobberModel();
 
@@ -146,6 +150,80 @@ export class BabylonGame {
   private robberYBaseOffset = 0;
 
   /**
+   * Sets up comprehensive pointer tap & click raycasting so board picking
+   * works deterministically across desktop, touchscreens, iOS, and Android.
+   */
+  private setupPointerInteraction(): void {
+    let pointerDownPos = { x: 0, y: 0 };
+
+    this.scene.onPointerObservable.add((pointerInfo: any) => {
+      if (pointerInfo.type === PointerEventTypes.POINTERDOWN) {
+        pointerDownPos = { x: this.scene.pointerX, y: this.scene.pointerY };
+      } else if (pointerInfo.type === PointerEventTypes.POINTERTAP || pointerInfo.type === PointerEventTypes.POINTERUP) {
+        const dx = this.scene.pointerX - pointerDownPos.x;
+        const dy = this.scene.pointerY - pointerDownPos.y;
+        if (dx * dx + dy * dy > 14 * 14) return; // Camera orbit drag, ignore
+
+        // Priority 1: If placing settlement or city, check vertex nodes first
+        if (this.currentPlacementMode === 'settlement' || this.currentPlacementMode === 'city') {
+          const vPick = this.scene.pick(this.scene.pointerX, this.scene.pointerY, (mesh: any) => {
+            return mesh.name.startsWith('node_') && mesh.isEnabled();
+          });
+          if (vPick && vPick.hit && vPick.pickedMesh) {
+            const vId = vPick.pickedMesh.name.replace('node_', '');
+            this.callbacks.onVertexClick?.(vId);
+            return;
+          }
+        }
+
+        // Priority 2: If placing road, check edge nodes or arrows first
+        if (this.currentPlacementMode === 'road') {
+          const ePick = this.scene.pick(this.scene.pointerX, this.scene.pointerY, (mesh: any) => {
+            return (mesh.name.startsWith('edge_') || mesh.name.startsWith('arrow_')) && mesh.isEnabled();
+          });
+          if (ePick && ePick.hit && ePick.pickedMesh) {
+            const eId = ePick.pickedMesh.name.replace('edge_', '').replace('arrow_', '');
+            this.callbacks.onEdgeClick?.(eId);
+            return;
+          }
+        }
+
+        // Priority 3: General board picking (robber highlight, tokens, hexes, vertex/edge nodes)
+        const pick = this.scene.pick(this.scene.pointerX, this.scene.pointerY, (mesh: any) => {
+          return (
+            mesh.name.startsWith('robberHL_') ||
+            mesh.name.startsWith('token_') ||
+            mesh.name.startsWith('top_') ||
+            mesh.name.startsWith('block_') ||
+            mesh.name.startsWith('node_') ||
+            mesh.name.startsWith('edge_') ||
+            mesh.name.startsWith('arrow_')
+          ) && mesh.isEnabled();
+        });
+
+        if (pick && pick.hit && pick.pickedMesh) {
+          const name = pick.pickedMesh.name;
+          if (name.startsWith('node_')) {
+            this.callbacks.onVertexClick?.(name.replace('node_', ''));
+          } else if (name.startsWith('edge_')) {
+            this.callbacks.onEdgeClick?.(name.replace('edge_', ''));
+          } else if (name.startsWith('arrow_')) {
+            this.callbacks.onEdgeClick?.(name.replace('arrow_', ''));
+          } else if (name.startsWith('robberHL_')) {
+            this.callbacks.onHexClick?.(name.replace('robberHL_', ''));
+          } else if (name.startsWith('token_')) {
+            this.callbacks.onHexClick?.(name.replace('token_', ''));
+          } else if (name.startsWith('top_')) {
+            this.callbacks.onHexClick?.(name.replace('top_', ''));
+          } else if (name.startsWith('block_')) {
+            this.callbacks.onHexClick?.(name.replace('block_', ''));
+          }
+        }
+      }
+    });
+  }
+
+  /**
    * Preloads the authentic Grim Reaper 3D model (grim_reaper_with_golden_angel_dark_wings.glb)
    * so it loads instantly with zero lag or delay, oriented at a golden perspective angle.
    */
@@ -157,7 +235,9 @@ export class BabylonGame {
       .then((result: any) => {
         const root = MeshBuilder.CreateBox('robber_root', { size: 0.01 }, this.scene as any);
         root.visibility = 0;
+        root.isPickable = false;
         result.meshes.forEach((m: any) => {
+          m.isPickable = false;
           if (!m.parent) {
             m.parent = root;
           }
@@ -195,6 +275,7 @@ export class BabylonGame {
             this.scene as any
           );
           fallback.position = this.targetRobberPos.clone();
+          fallback.isPickable = false;
           const rMat = new StandardMaterial('rFallbackMat', this.scene as any);
           rMat.diffuseColor = new Color3(0.12, 0.12, 0.14);
           rMat.specularColor = new Color3(0.8, 0.7, 0.3);
@@ -228,6 +309,7 @@ export class BabylonGame {
     );
     aura.position = new Vector3(x, 0.67, z);
     aura.rotation.y = Math.PI / 6;
+    aura.isPickable = false;
 
     const auraMat = new StandardMaterial('robberAuraMat', this.scene);
     auraMat.diffuseColor = new Color3(0.08, 0.02, 0.02);
@@ -309,6 +391,7 @@ export class BabylonGame {
       this.scene
     );
     table.position = new Vector3(0, -1.0, 0);
+    table.isPickable = false;
 
     const tableMat = new StandardMaterial('tableMat', this.scene);
     const tableTex = new Texture('/textures/table/wood_table.jpg', this.scene as any);
@@ -330,6 +413,7 @@ export class BabylonGame {
       this.scene
     );
     boardBase.position = new Vector3(0, -0.2, 0);
+    boardBase.isPickable = false;
 
     const baseMat = new StandardMaterial('boardBaseMat', this.scene);
     const baseTex = new Texture('/textures/table/wood_board.jpg', this.scene as any);
@@ -651,6 +735,7 @@ export class BabylonGame {
       waterHex.position = new Vector3(x, 0.225, z);
       waterHex.rotation.y = Math.PI / 6;
       waterHex.material = waterMat;
+      waterHex.isPickable = false;
 
       this.harborMeshes.push(waterHex);
 
@@ -661,6 +746,7 @@ export class BabylonGame {
           { diameter: 1.45, height: 0.12, tessellation: 28 },
           this.scene
         );
+        harborDisc.isPickable = false;
         // Position on top of water hex
         harborDisc.position = new Vector3(x, 0.48, z);
 
@@ -830,6 +916,7 @@ export class BabylonGame {
       );
       card.position = st.pos;
       card.rotation.y = st.rotY;
+      card.isPickable = false;
 
       const cardMat = new StandardMaterial(`cardMat_${st.id}`, this.scene);
       const tex = new Texture(st.texPath, this.scene as any);
@@ -869,6 +956,7 @@ export class BabylonGame {
         road.position = toWorld(2.6 + row * 0.35, -1.6 + col * 0.8, 0.09);
         road.rotation.y = st.rotY;
         road.material = pieceMat;
+        road.isPickable = false;
       }
 
       // B) 5 Authentic Settlement Houses (peaked gable roof)
@@ -877,6 +965,8 @@ export class BabylonGame {
         settle.position = toWorld(3.9, -1.5 + s * 0.75, 0.02);
         settle.rotation.y = st.rotY;
         this.applyPieceMaterial(settle, pieceMat);
+        settle.isPickable = false;
+        settle.getChildMeshes().forEach((m: any) => { m.isPickable = false; });
       }
 
       // C) 4 Authentic Fortified Cities (stepped cathedral tower)
@@ -885,6 +975,8 @@ export class BabylonGame {
         city.position = toWorld(4.8, -1.2 + c * 0.85, 0.02);
         city.rotation.y = st.rotY;
         this.applyPieceMaterial(city, pieceMat);
+        city.isPickable = false;
+        city.getChildMeshes().forEach((m: any) => { m.isPickable = false; });
       }
     });
   }
@@ -1290,6 +1382,13 @@ export class BabylonGame {
     tokenMat.specularPower = 64;
     token.material = tokenMat;
 
+    token.actionManager = new ActionManager(this.scene);
+    token.actionManager.registerAction(
+      new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
+        this.callbacks.onHexClick?.(hexId);
+      })
+    );
+
     this.tokenMeshes.set(hexId, token);
   }
 
@@ -1411,6 +1510,7 @@ export class BabylonGame {
         this.scene
       );
       spot.position = new Vector3(v.x, 1.21, v.z);
+      spot.isPickable = false;
       const spotMat = new StandardMaterial('previewSpotMat', this.scene);
       spotMat.diffuseColor = new Color3(1.0, 0.95, 0.4);
       spotMat.emissiveColor = new Color3(1.0, 0.85, 0.2);
@@ -1427,6 +1527,8 @@ export class BabylonGame {
         piece = this.createSettlementMesh('preview_piece', 0.95);
         piece.position = new Vector3(v.x, 0.68, v.z);
       }
+      piece.isPickable = false;
+      piece.getChildMeshes().forEach((m: any) => { m.isPickable = false; });
 
       const pMat = new StandardMaterial('previewPieceMat', this.scene);
       pMat.diffuseColor = Color3.FromHexString(playerColor);
@@ -1450,6 +1552,7 @@ export class BabylonGame {
       );
       spot.position = new Vector3(edge.x, 1.01, edge.z);
       spot.rotation.y = angleY;
+      spot.isPickable = false;
       const spotMat = new StandardMaterial('previewSpotMat_road', this.scene);
       spotMat.diffuseColor = new Color3(1.0, 0.95, 0.4);
       spotMat.emissiveColor = new Color3(1.0, 0.85, 0.2);
@@ -1461,6 +1564,7 @@ export class BabylonGame {
       const roadMesh = MeshBuilder.CreateBox('preview_road', { width: 0.34, height: 0.34, depth: 1.7 }, this.scene);
       roadMesh.position = new Vector3(edge.x, 0.74, edge.z);
       roadMesh.rotation.y = angleY;
+      roadMesh.isPickable = false;
 
       const pMat = new StandardMaterial('previewRoadMat', this.scene);
       pMat.diffuseColor = Color3.FromHexString(playerColor);
@@ -1620,6 +1724,14 @@ export class BabylonGame {
       disc.position = new Vector3(pos.x, 0.70, pos.z);
       disc.rotation.y = Math.PI / 6;
       disc.material = highlightMat;
+      disc.isPickable = true;
+
+      disc.actionManager = new ActionManager(this.scene);
+      disc.actionManager.registerAction(
+        new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
+          this.callbacks.onHexClick?.(hexId);
+        })
+      );
 
       // Simple pulsing via scene observer
       let tick = 0;

@@ -266,6 +266,44 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       (gameState?.phase === 'MAIN' && gameState?.dice?.rolled))
   );
 
+  const isSetup = Boolean(gameState?.phase?.startsWith('SETUP'));
+  const placedSettlements = gameState ? Object.values(gameState.board.vertices).filter((v) => v.building?.playerId === localPlayerId).length : 0;
+  const placedRoads = gameState ? Object.values(gameState.board.edges).filter((e) => e.road?.playerId === localPlayerId).length : 0;
+  const setupNeedsSettlement = isSetup && (
+    (gameState?.phase === 'SETUP_ROUND_1' && placedSettlements === 0) ||
+    (gameState?.phase === 'SETUP_ROUND_2' && placedSettlements === 1)
+  );
+  const setupNeedsRoad = isSetup && (
+    (gameState?.phase === 'SETUP_ROUND_1' && placedSettlements === 1 && placedRoads === 0) ||
+    (gameState?.phase === 'SETUP_ROUND_2' && placedSettlements === 2 && placedRoads === 1)
+  );
+
+  const canAffordRoad = isSetup || Boolean(
+    (localPlayer?.resources?.lumber ?? 0) >= 1 &&
+    (localPlayer?.resources?.brick ?? 0) >= 1 &&
+    (localPlayer?.roadsRemaining ?? 15) > 0
+  );
+
+  const canAffordSettlement = isSetup || Boolean(
+    (localPlayer?.resources?.lumber ?? 0) >= 1 &&
+    (localPlayer?.resources?.brick ?? 0) >= 1 &&
+    (localPlayer?.resources?.wool ?? 0) >= 1 &&
+    (localPlayer?.resources?.grain ?? 0) >= 1 &&
+    (localPlayer?.settlementsRemaining ?? 5) > 0
+  );
+
+  const hasSettlementToUpgrade = gameState ? Object.values(gameState.board.vertices).some(
+    (v) => v.building?.playerId === localPlayerId && v.building?.type === 'settlement'
+  ) : false;
+
+  const canAffordCity = Boolean(
+    !isSetup &&
+    (localPlayer?.resources?.grain ?? 0) >= 2 &&
+    (localPlayer?.resources?.ore ?? 0) >= 3 &&
+    (localPlayer?.citiesRemaining ?? 4) > 0 &&
+    hasSettlementToUpgrade
+  );
+
   // Robber phase state helpers
   const myPendingDiscard = gameState?.pendingDiscards?.[localPlayerId] ?? 0;
   const isRobberDiscard = gameState?.phase === 'ROBBER_DISCARD' && myPendingDiscard > 0;
@@ -886,6 +924,175 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </div>
           )}
         </div>
+
+        {/* Right Side: Dedicated Action & Placement Controls Palette */}
+        {isMyTurn && (
+          <div className="pointer-events-auto flex flex-col items-end gap-2 pr-2 sm:pr-4 pt-2 z-20 shrink-0">
+            {/* If in Setup Phase: Highlight the exact required piece */}
+            {isSetup ? (
+              <div className="flex flex-col gap-2 p-2.5 rounded-2xl bg-gradient-to-b from-[#2a1309]/95 via-[#1a0c06]/95 to-[#0d0603]/95 border-2 border-amber-500/70 shadow-[0_8px_30px_rgba(0,0,0,0.85)] backdrop-blur-md animate-in slide-in-from-right-2 duration-150 max-w-[210px]">
+                <div className="text-[10px] font-black uppercase tracking-wider text-amber-400 font-serif border-b border-amber-900/40 pb-1 flex items-center justify-between">
+                  <span>⚓ Setup Phase</span>
+                  <span className="text-amber-200/60 font-mono">{gameState.phase === 'SETUP_ROUND_1' ? '1/2' : '2/2'}</span>
+                </div>
+
+                {setupNeedsSettlement && (
+                  <button
+                    onClick={() => {
+                      soundManager.playClick();
+                      setBuildMode('settlement');
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all ${
+                      buildMode === 'settlement'
+                        ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-amber-950 font-black shadow-[0_0_15px_rgba(245,158,11,0.6)] border-2 border-amber-300 animate-pulse'
+                        : 'bg-black/40 hover:bg-amber-900/40 border border-amber-600/40 text-amber-200 cursor-pointer'
+                    }`}
+                  >
+                    <span className="text-xl">🏠</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-black font-serif text-amber-100">Settlement</span>
+                      <span className="text-[10px] text-amber-300/80">Click circle on board</span>
+                    </div>
+                  </button>
+                )}
+
+                {setupNeedsRoad && (
+                  <button
+                    onClick={() => {
+                      soundManager.playClick();
+                      setBuildMode('road');
+                    }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-all ${
+                      buildMode === 'road'
+                        ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-amber-950 font-black shadow-[0_0_15px_rgba(245,158,11,0.6)] border-2 border-amber-300 animate-pulse'
+                        : 'bg-black/40 hover:bg-amber-900/40 border border-amber-600/40 text-amber-200 cursor-pointer'
+                    }`}
+                  >
+                    <span className="text-xl">🛤️</span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-black font-serif text-amber-100">Road</span>
+                      <span className="text-[10px] text-amber-300/80">Click path from town</span>
+                    </div>
+                  </button>
+                )}
+              </div>
+            ) : gameState.phase === 'ROBBER_MOVE' ? (
+              <div className="flex flex-col gap-2 p-3 rounded-2xl bg-gradient-to-b from-[#3a0d0d]/95 via-[#260707]/95 to-[#120303]/95 border-2 border-amber-500/80 shadow-[0_8px_30px_rgba(220,38,38,0.7)] backdrop-blur-md animate-pulse max-w-[210px]">
+                <div className="flex items-center gap-2 text-amber-300 font-serif font-black text-xs">
+                  <span className="text-lg">🔴</span>
+                  <span>Move Robber</span>
+                </div>
+                <p className="text-[11px] text-amber-100 leading-tight">
+                  Click any highlighted hex to relocate the corsair.
+                </p>
+              </div>
+            ) : gameState.phase === 'MAIN' ? (
+              /* Normal Turn: Fast Action / Build Palette */
+              <div className="flex flex-col gap-1.5 p-2 rounded-2xl bg-gradient-to-b from-[#24130c]/95 via-[#180b06]/95 to-[#0d0603]/95 border-2 border-amber-600/60 shadow-[0_10px_35px_rgba(0,0,0,0.85)] backdrop-blur-md animate-in slide-in-from-right-2 duration-150 min-w-[170px] sm:min-w-[190px]">
+                <div className="text-[10px] font-black uppercase tracking-wider text-amber-400 font-serif border-b border-amber-900/40 pb-1 px-1 flex items-center justify-between">
+                  <span>⚓ Actions</span>
+                  <span className="text-amber-200/50 text-[9px] font-mono">Turn {gameState.turnNumber}</span>
+                </div>
+
+                {/* Road Placement Button */}
+                <button
+                  onClick={() => {
+                    soundManager.playClick();
+                    setBuildMode(buildMode === 'road' ? 'none' : 'road');
+                  }}
+                  disabled={!canAffordRoad}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl border transition-all ${
+                    buildMode === 'road'
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black border-amber-300 shadow-md ring-1 ring-amber-300'
+                      : canAffordRoad
+                      ? 'bg-black/40 hover:bg-amber-900/40 border-amber-600/40 text-amber-200 hover:text-white cursor-pointer'
+                      : 'bg-black/20 border-stone-800/40 text-stone-600 cursor-not-allowed opacity-60'
+                  }`}
+                  title={canAffordRoad ? 'Build Road (1 Lumber, 1 Brick)' : 'Need 1 Lumber and 1 Brick'}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🛤️</span>
+                    <span className="text-xs font-bold font-serif">Road</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px] font-mono opacity-80">
+                    <span>🪵🧱</span>
+                    <span className="text-[9px] bg-black/40 px-1 rounded">{localPlayer?.roadsRemaining ?? 15}</span>
+                  </div>
+                </button>
+
+                {/* Settlement Placement Button */}
+                <button
+                  onClick={() => {
+                    soundManager.playClick();
+                    setBuildMode(buildMode === 'settlement' ? 'none' : 'settlement');
+                  }}
+                  disabled={!canAffordSettlement}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl border transition-all ${
+                    buildMode === 'settlement'
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black border-amber-300 shadow-md ring-1 ring-amber-300'
+                      : canAffordSettlement
+                      ? 'bg-black/40 hover:bg-amber-900/40 border-amber-600/40 text-amber-200 hover:text-white cursor-pointer'
+                      : 'bg-black/20 border-stone-800/40 text-stone-600 cursor-not-allowed opacity-60'
+                  }`}
+                  title={canAffordSettlement ? 'Build Settlement (1 Lumber, 1 Brick, 1 Wool, 1 Grain)' : 'Need 1 Lumber, 1 Brick, 1 Wool, 1 Grain'}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🏠</span>
+                    <span className="text-xs font-bold font-serif">Settlement</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px] font-mono opacity-80">
+                    <span>🪵🧱🐑🌾</span>
+                    <span className="text-[9px] bg-black/40 px-1 rounded">{localPlayer?.settlementsRemaining ?? 5}</span>
+                  </div>
+                </button>
+
+                {/* City Upgrade Button */}
+                <button
+                  onClick={() => {
+                    soundManager.playClick();
+                    setBuildMode(buildMode === 'city' ? 'none' : 'city');
+                  }}
+                  disabled={!canAffordCity}
+                  className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl border transition-all ${
+                    buildMode === 'city'
+                      ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black border-amber-300 shadow-md ring-1 ring-amber-300'
+                      : canAffordCity
+                      ? 'bg-black/40 hover:bg-amber-900/40 border-amber-600/40 text-amber-200 hover:text-white cursor-pointer'
+                      : 'bg-black/20 border-stone-800/40 text-stone-600 cursor-not-allowed opacity-60'
+                  }`}
+                  title={
+                    !hasSettlementToUpgrade
+                      ? 'No existing settlements on board to upgrade'
+                      : canAffordCity
+                      ? 'Upgrade Settlement to City (2 Grain, 3 Ore)'
+                      : 'Need 2 Grain and 3 Ore'
+                  }
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">🏰</span>
+                    <span className="text-xs font-bold font-serif">City</span>
+                  </div>
+                  <div className="flex items-center gap-1 text-[10px] font-mono opacity-80">
+                    <span>🌾🌾⛰️⛰️⛰️</span>
+                    <span className="text-[9px] bg-black/40 px-1 rounded">{localPlayer?.citiesRemaining ?? 4}</span>
+                  </div>
+                </button>
+
+                {/* Open Full Build Catalog Modal */}
+                <button
+                  onClick={() => {
+                    soundManager.playClick();
+                    setBuildModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg bg-amber-950/40 hover:bg-amber-900/60 border border-amber-600/40 text-amber-300 hover:text-white text-[10px] font-bold uppercase tracking-wider transition-all mt-0.5 cursor-pointer"
+                >
+                  <Hammer className="w-3 h-3 text-amber-400" />
+                  <span>Full Catalog</span>
+                </button>
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {/* ============================================================ */}

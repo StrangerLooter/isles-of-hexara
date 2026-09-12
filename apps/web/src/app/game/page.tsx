@@ -72,24 +72,32 @@ export default function GamePage() {
     const isMyTurn = activePlayerId === localPlayerId;
 
     if (isMyTurn && gameState.phase.startsWith('SETUP')) {
-      const p = gameState.players[localPlayerId];
-      if (!p) return;
+      const placedSettlements = Object.values(gameState.board.vertices).filter(
+        (v) => v.building?.playerId === localPlayerId
+      ).length;
+      const placedRoads = Object.values(gameState.board.edges).filter(
+        (e) => e.road?.playerId === localPlayerId
+      ).length;
 
       if (gameState.phase === 'SETUP_ROUND_1') {
-        if (p.settlementsRemaining === 5 && buildMode !== 'settlement') {
-          setBuildMode('settlement');
-        } else if (p.settlementsRemaining === 4 && p.roadsRemaining === 15 && buildMode !== 'road') {
-          setBuildMode('road');
+        if (placedSettlements === 0) {
+          if (buildMode !== 'settlement') setBuildMode('settlement');
+        } else if (placedRoads === 0) {
+          if (buildMode !== 'road') setBuildMode('road');
+        } else {
+          if (buildMode !== 'none') setBuildMode('none');
         }
       } else if (gameState.phase === 'SETUP_ROUND_2') {
-        if (p.settlementsRemaining === 4 && buildMode !== 'settlement') {
-          setBuildMode('settlement');
-        } else if (p.settlementsRemaining === 3 && p.roadsRemaining === 14 && buildMode !== 'road') {
-          setBuildMode('road');
+        if (placedSettlements === 1) {
+          if (buildMode !== 'settlement') setBuildMode('settlement');
+        } else if (placedRoads === 1) {
+          if (buildMode !== 'road') setBuildMode('road');
+        } else {
+          if (buildMode !== 'none') setBuildMode('none');
         }
       }
     }
-  }, [gameState?.phase, gameState?.currentPlayerIndex, gameState?.players, localPlayerId, buildMode]);
+  }, [gameState?.phase, gameState?.currentPlayerIndex, gameState?.board, localPlayerId, buildMode]);
 
   // Initialize Connection or Local Game
   useEffect(() => {
@@ -661,37 +669,64 @@ export default function GamePage() {
     const vertex = gameState.board.vertices[vertexId];
     if (!vertex) return;
 
-    if (buildMode === 'settlement' || buildMode === 'city') {
-      setSelectedVertexId(vertexId);
-      setSelectedEdgeId(null);
+    const isSetup = gameState.phase.startsWith('SETUP');
+    const isMyTurn = gameState.playerOrder[gameState.currentPlayerIndex] === localPlayerId;
 
-      // In SETUP phases: immediately place the piece on click (no separate confirm needed)
-      const isSetup = gameState.phase.startsWith('SETUP');
-      if (isSetup) {
+    // In SETUP phases: immediately place the piece on valid click
+    if (isSetup && isMyTurn) {
+      const placedSettlements = Object.values(gameState.board.vertices).filter(
+        (v) => v.building?.playerId === localPlayerId
+      ).length;
+      const needsSettlement =
+        (gameState.phase === 'SETUP_ROUND_1' && placedSettlements === 0) ||
+        (gameState.phase === 'SETUP_ROUND_2' && placedSettlements === 1);
+
+      if (needsSettlement || buildMode === 'settlement') {
         soundManager.playPlacement();
         dispatchAction({ type: 'BUILD_SETTLEMENT', playerId: localPlayerId, vertexId });
         setSelectedVertexId(null);
         setBuildMode('road');
+        return;
       }
-      // In regular game phase, the user sees a preview and must click "Confirm" in the HUD
+    }
+
+    if (buildMode === 'settlement' || buildMode === 'city') {
+      setSelectedVertexId(vertexId);
+      setSelectedEdgeId(null);
+      // In regular game phase, the user sees a preview and clicks "Confirm" in the HUD or right palette
     }
   };
 
   const handleEdgeSelect = (edgeId: string) => {
     if (!gameState) return;
-    if (buildMode === 'road') {
-      setSelectedEdgeId(edgeId);
-      setSelectedVertexId(null);
+    const isSetup = gameState.phase.startsWith('SETUP');
+    const isMyTurn = gameState.playerOrder[gameState.currentPlayerIndex] === localPlayerId;
 
-      // In SETUP phases: immediately place road on click
-      const isSetup = gameState.phase.startsWith('SETUP');
-      if (isSetup) {
+    // In SETUP phases: immediately place road on valid click
+    if (isSetup && isMyTurn) {
+      const placedSettlements = Object.values(gameState.board.vertices).filter(
+        (v) => v.building?.playerId === localPlayerId
+      ).length;
+      const placedRoads = Object.values(gameState.board.edges).filter(
+        (e) => e.road?.playerId === localPlayerId
+      ).length;
+      const needsRoad =
+        (gameState.phase === 'SETUP_ROUND_1' && placedSettlements === 1 && placedRoads === 0) ||
+        (gameState.phase === 'SETUP_ROUND_2' && placedSettlements === 2 && placedRoads === 1);
+
+      if (needsRoad || buildMode === 'road') {
         soundManager.playPlacement();
         dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId });
         setSelectedEdgeId(null);
         setBuildMode('none');
-        dispatchAction({ type: 'END_TURN', playerId: localPlayerId });
+        // Note: Do NOT dispatch END_TURN! BUILD_ROAD in authoritative game-core automatically advances the setup snake draft!
+        return;
       }
+    }
+
+    if (buildMode === 'road') {
+      setSelectedEdgeId(edgeId);
+      setSelectedVertexId(null);
     }
   };
 
@@ -735,12 +770,8 @@ export default function GamePage() {
       soundManager.playPlacement();
       dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId: selectedEdgeId });
       setSelectedEdgeId(null);
-      if (isSetup) {
-        setBuildMode('none');
-        dispatchAction({ type: 'END_TURN', playerId: localPlayerId });
-      } else {
-        setBuildMode('none');
-      }
+      setBuildMode('none');
+      // Note: Do NOT dispatch duplicate END_TURN during setup!
     }
   };
 
