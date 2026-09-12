@@ -44,7 +44,8 @@ describe('Two-Player Mode Full Lifecycle', () => {
     // 6. Host starts game
     const startRes = manager.startGame(lobby.code, 'p1_host');
     assert.strictEqual(startRes.success, true);
-    assert.strictEqual(startRes.players?.length, 2);
+    assert.ok(startRes.players);
+    assert.strictEqual(startRes.players.length, 2);
     assert.strictEqual(startRes.players[0].id, 'p1_host');
     assert.strictEqual(startRes.players[1].id, 'p2_guest');
     assert.strictEqual(startRes.players.every((p) => !p.isAi), true);
@@ -69,7 +70,8 @@ describe('Two-Player Mode Full Lifecycle', () => {
     // Starting solo match fills remaining seat with 1 AI bot
     const startRes = manager.startGame(lobby.code, 'solo_player');
     assert.strictEqual(startRes.success, true);
-    assert.strictEqual(startRes.players?.length, 2);
+    assert.ok(startRes.players);
+    assert.strictEqual(startRes.players.length, 2);
     assert.strictEqual(startRes.players[0].id, 'solo_player');
     assert.strictEqual(startRes.players[0].isAi, false);
     assert.strictEqual(startRes.players[1].isAi, true);
@@ -187,7 +189,7 @@ describe('Two-Player Mode Full Lifecycle', () => {
     state = rollRes.newState;
 
     // Check turn passing to Bob
-    if (state.phase !== 'ROBBER_DISCARD' && state.phase !== 'ROBBER_PLACEMENT') {
+    if (state.phase !== 'ROBBER_DISCARD' && state.phase !== 'ROBBER_MOVE' && state.phase !== 'ROBBER_STEAL') {
       const endRes = executeGameAction(state, { type: 'END_TURN', playerId: 'player_a' });
       assert.strictEqual(endRes.success, true);
       state = endRes.newState;
