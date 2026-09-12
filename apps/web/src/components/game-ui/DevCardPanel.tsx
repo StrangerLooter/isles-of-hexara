@@ -10,6 +10,9 @@ interface DevCardPanelProps {
   onClose: () => void;
   devCards: DevCardType[];
   canPlay: boolean; // false if not MAIN phase or not your turn
+  hasPlayedDevCardThisTurn?: boolean;
+  boughtThisTurn?: DevCardType[];
+  isMyTurn?: boolean;
   onPlay: (card: DevCardType, params?: DevCardParams) => void;
 }
 
@@ -270,10 +273,25 @@ export const DevCardPanel: React.FC<DevCardPanelProps> = ({
   onClose,
   devCards,
   canPlay,
+  hasPlayedDevCardThisTurn,
+  boughtThisTurn = [],
+  isMyTurn = true,
   onPlay,
 }) => {
   const [pendingCard, setPendingCard] = useState<DevCardType | null>(null);
   const [inspectedCard, setInspectedCard] = useState<DevCardType | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -341,7 +359,20 @@ export const DevCardPanel: React.FC<DevCardPanelProps> = ({
                 {uniqueCards.map(([card, count]) => {
                   const meta = CARD_META[card];
                   const isVP = card === 'victory_point';
-                  const canPlayThisCard = canPlay && !isVP;
+                  const isBoughtThisTurn = Boolean(boughtThisTurn?.includes(card));
+                  const isLimitReached = Boolean(hasPlayedDevCardThisTurn);
+
+                  const getDisabledReason = () => {
+                    if (isVP) return 'Victory points score automatically';
+                    if (!isMyTurn) return 'You can only play cards on your own turn';
+                    if (!canPlay) return 'Can only play cards during Main turn phase';
+                    if (isLimitReached) return 'Limit: 1 Dev Card per turn';
+                    if (isBoughtThisTurn) return 'Bought this turn (Wait next turn)';
+                    return null;
+                  };
+
+                  const disabledReason = getDisabledReason();
+                  const canPlayThisCard = !disabledReason;
 
                   return (
                     <div
@@ -404,22 +435,34 @@ export const DevCardPanel: React.FC<DevCardPanelProps> = ({
                         <button
                           disabled={!canPlayThisCard}
                           onClick={() => handlePlayCard(card)}
+                          title={disabledReason || 'Play Card'}
                           className={`w-full py-2 rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md ${
                             canPlayThisCard
                               ? 'catan-btn-gold cursor-pointer hover:scale-102 active:scale-95'
-                              : 'bg-black/50 text-white/30 border border-white/10 cursor-not-allowed'
+                              : 'bg-black/50 text-white/40 border border-white/10 cursor-not-allowed'
                           }`}
                         >
                           {isVP ? (
-                            'Hidden (+1 VP)'
-                          ) : !canPlay ? (
+                            'Passive (+1 VP)'
+                          ) : isLimitReached ? (
+                            'Limit: 1/Turn'
+                          ) : isBoughtThisTurn ? (
+                            'Bought This Turn'
+                          ) : !isMyTurn ? (
                             'Wait Turn'
+                          ) : !canPlay ? (
+                            'Main Phase Only'
                           ) : (
                             <>
                               <Play className="w-3.5 h-3.5 fill-current" /> Play Card
                             </>
                           )}
                         </button>
+                        {disabledReason && (
+                          <span className="text-[9px] text-amber-400/80 font-mono mt-1 text-center block truncate" title={disabledReason}>
+                            {disabledReason}
+                          </span>
+                        )}
                       </div>
                     </div>
                   );

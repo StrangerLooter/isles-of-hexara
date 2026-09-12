@@ -113,3 +113,12 @@ body {
   background: #ba7e2c;
   border-radius: 3px;
 }
+
+/* Reduced Motion Accessibility Mode */
+.reduced-motion *,
+.reduced-motion *::before,
+.reduced-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}

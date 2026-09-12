@@ -136,21 +136,31 @@ export const RightSidebarWidget: React.FC<RightSidebarWidgetProps> = ({
       </div>
 
       {/* Bottom Message Input Bar */}
-      <form onSubmit={handleSend} className="p-2 border-t border-amber-900/40 bg-black/50 flex gap-2 items-center">
-        <input
-          type="text"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          placeholder="Type a message..."
-          className="flex-1 bg-black/70 border border-amber-600/40 rounded-xl px-3 py-1.5 text-xs text-amber-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-400 font-serif"
-        />
-        <button
-          type="submit"
-          className="p-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-amber-950 shadow-md border border-amber-400 active:scale-95 transition-all"
-          title="Send message"
-        >
-          <Send className="w-3.5 h-3.5 stroke-[2.5]" />
-        </button>
+      <form onSubmit={handleSend} className="p-2 border-t border-amber-900/40 bg-black/50 flex flex-col gap-1">
+        <div className="flex gap-2 items-center">
+          <input
+            type="text"
+            maxLength={120}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder="Type a dispatch..."
+            className="flex-1 bg-black/70 border border-amber-600/40 rounded-xl px-3 py-1.5 text-xs text-amber-100 placeholder:text-stone-500 focus:outline-none focus:border-amber-400 font-serif"
+          />
+          <button
+            type="submit"
+            className="p-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-amber-950 shadow-md border border-amber-400 active:scale-95 transition-all"
+            title="Send message"
+          >
+            <Send className="w-3.5 h-3.5 stroke-[2.5]" />
+          </button>
+        </div>
+        {inputText.length > 0 && (
+          <div className="flex justify-end pr-1">
+            <span className={`text-[9px] font-mono ${inputText.length >= 110 ? 'text-amber-400 font-bold' : 'text-stone-500'}`}>
+              {inputText.length}/120
+            </span>
+          </div>
+        )}
       </form>
     </div>
   );

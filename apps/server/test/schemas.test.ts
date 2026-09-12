@@ -39,7 +39,21 @@ describe('Protocol Schemas Validation', () => {
       assert.strictEqual(valid.data.maxPlayers, 4);
     }
 
-    // Invalid maxPlayers
+    // Valid 2, 3, and 4 players
+    const valid2 = createGameSchema.safeParse({ maxPlayers: 2 });
+    assert.strictEqual(valid2.success, true);
+    if (valid2.success) assert.strictEqual(valid2.data.maxPlayers, 2);
+
+    const valid3 = createGameSchema.safeParse({ maxPlayers: 3 });
+    assert.strictEqual(valid3.success, true);
+    if (valid3.success) assert.strictEqual(valid3.data.maxPlayers, 3);
+
+    // Invalid maxPlayers (< 2 or > 4)
+    const invalidUnder = createGameSchema.safeParse({
+      maxPlayers: 1,
+    });
+    assert.strictEqual(invalidUnder.success, false);
+
     const invalidPlayers = createGameSchema.safeParse({
       maxPlayers: 5,
     });

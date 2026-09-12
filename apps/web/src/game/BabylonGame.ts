@@ -58,9 +58,19 @@ export class BabylonGame {
   private previewPieceMesh: Mesh | null = null;
   private previewSpotMesh: Mesh | null = null;
   private robberHighlightMeshes: Mesh[] = [];
+  private robberAuraMesh: Mesh | null = null;
+  private robberAuraObserver: any = null;
+  private placementPulseObserver: any = null;
 
   // Materials caching
   private terrainMaterials = new Map<string, StandardMaterial>();
+  private playerMaterials = new Map<string, StandardMaterial>();
+  private roadMaterials = new Map<string, StandardMaterial>();
+  private vertexAnchorMaterial: StandardMaterial | null = null;
+  private vertexAnchorHoverMaterial: StandardMaterial | null = null;
+  private edgeAnchorMaterial: StandardMaterial | null = null;
+  private edgeAnchorHoverMaterial: StandardMaterial | null = null;
+  private roadArrowMaterial: StandardMaterial | null = null;
   private blockSideMaterial: StandardMaterial | null = null;
   private lastBoardHash = '';
 
@@ -200,6 +210,44 @@ export class BabylonGame {
     if (this.robberMesh) {
       this.robberMesh.position = new Vector3(x, 0.68 - this.robberYBaseOffset, z);
     }
+
+    // Dynamic ominous dark curse aura overlay beneath robber
+    if (this.robberAuraMesh) {
+      if (this.robberAuraObserver) {
+        this.scene.onBeforeRenderObservable.remove(this.robberAuraObserver);
+        this.robberAuraObserver = null;
+      }
+      this.robberAuraMesh.dispose();
+      this.robberAuraMesh = null;
+    }
+
+    const aura = MeshBuilder.CreateCylinder(
+      'robber_curse_aura',
+      { diameter: 3.85, height: 0.02, tessellation: 6 },
+      this.scene
+    );
+    aura.position = new Vector3(x, 0.67, z);
+    aura.rotation.y = Math.PI / 6;
+
+    const auraMat = new StandardMaterial('robberAuraMat', this.scene);
+    auraMat.diffuseColor = new Color3(0.08, 0.02, 0.02);
+    auraMat.emissiveColor = new Color3(0.32, 0.05, 0.05);
+    auraMat.alpha = 0.55;
+    aura.material = auraMat;
+
+    let auraTick = 0;
+    this.robberAuraObserver = this.scene.onBeforeRenderObservable.add(() => {
+      auraTick += 0.035;
+      if (aura && !aura.isDisposed()) {
+        auraMat.alpha = 0.42 + 0.22 * Math.sin(auraTick);
+      }
+    });
+
+    this.robberAuraMesh = aura;
+  }
+
+  public resize(): void {
+    this.handleResize();
   }
 
   private handleResize = () => {
@@ -889,6 +937,80 @@ export class BabylonGame {
     return this.blockSideMaterial;
   }
 
+  private getPlayerPieceMaterial(color: string): StandardMaterial {
+    let mat = this.playerMaterials.get(color);
+    if (!mat) {
+      mat = new StandardMaterial(`playerPieceMat_${color}`, this.scene);
+      mat.diffuseColor = Color3.FromHexString(color);
+      mat.specularColor = new Color3(0.25, 0.25, 0.25);
+      mat.specularPower = 32;
+      this.playerMaterials.set(color, mat);
+    }
+    return mat;
+  }
+
+  private getPlayerRoadMaterial(color: string): StandardMaterial {
+    let mat = this.roadMaterials.get(color);
+    if (!mat) {
+      mat = new StandardMaterial(`playerRoadMat_${color}`, this.scene);
+      mat.diffuseColor = Color3.FromHexString(color);
+      mat.specularColor = new Color3(0.3, 0.3, 0.3);
+      mat.specularPower = 32;
+      this.roadMaterials.set(color, mat);
+    }
+    return mat;
+  }
+
+  private getVertexAnchorMaterial(): StandardMaterial {
+    if (!this.vertexAnchorMaterial) {
+      this.vertexAnchorMaterial = new StandardMaterial('sharedVertexAnchorMat', this.scene);
+      this.vertexAnchorMaterial.diffuseColor = new Color3(1.0, 1.0, 1.0);
+      this.vertexAnchorMaterial.emissiveColor = new Color3(0.8, 0.8, 0.8);
+      this.vertexAnchorMaterial.specularColor = new Color3(0.8, 0.8, 0.8);
+      this.vertexAnchorMaterial.alpha = 0.92;
+    }
+    return this.vertexAnchorMaterial;
+  }
+
+  private getVertexAnchorHoverMaterial(): StandardMaterial {
+    if (!this.vertexAnchorHoverMaterial) {
+      this.vertexAnchorHoverMaterial = new StandardMaterial('sharedVertexHoverMat', this.scene);
+      this.vertexAnchorHoverMaterial.diffuseColor = new Color3(0.1, 0.9, 0.4);
+      this.vertexAnchorHoverMaterial.emissiveColor = new Color3(0.2, 1.0, 0.5);
+      this.vertexAnchorHoverMaterial.alpha = 0.95;
+    }
+    return this.vertexAnchorHoverMaterial;
+  }
+
+  private getEdgeAnchorMaterial(): StandardMaterial {
+    if (!this.edgeAnchorMaterial) {
+      this.edgeAnchorMaterial = new StandardMaterial('sharedEdgeAnchorMat', this.scene);
+      this.edgeAnchorMaterial.diffuseColor = new Color3(1.0, 0.85, 0.2);
+      this.edgeAnchorMaterial.emissiveColor = new Color3(0.4, 0.3, 0.05);
+      this.edgeAnchorMaterial.alpha = 0.72;
+    }
+    return this.edgeAnchorMaterial;
+  }
+
+  private getEdgeAnchorHoverMaterial(): StandardMaterial {
+    if (!this.edgeAnchorHoverMaterial) {
+      this.edgeAnchorHoverMaterial = new StandardMaterial('sharedEdgeHoverMat', this.scene);
+      this.edgeAnchorHoverMaterial.diffuseColor = new Color3(0.1, 0.9, 0.4);
+      this.edgeAnchorHoverMaterial.emissiveColor = new Color3(0.2, 1.0, 0.5);
+      this.edgeAnchorHoverMaterial.alpha = 0.92;
+    }
+    return this.edgeAnchorHoverMaterial;
+  }
+
+  private getRoadArrowMaterial(): StandardMaterial {
+    if (!this.roadArrowMaterial) {
+      this.roadArrowMaterial = new StandardMaterial('sharedRoadArrowMat', this.scene);
+      this.roadArrowMaterial.diffuseColor = new Color3(1.0, 0.85, 0.2);
+      this.roadArrowMaterial.emissiveColor = new Color3(0.5, 0.38, 0.04);
+    }
+    return this.roadArrowMaterial;
+  }
+
   /**
    * Creates a thin flat hexagonal top-cap cylinder for the terrain texture face.
    * Using a cylinder (not a disc) gives us a proper UV-mapped top face with no z-fighting
@@ -1009,12 +1131,8 @@ export class BabylonGame {
         );
         vNode.position = new Vector3(v.x, 1.22, v.z);
 
-        const vMat = new StandardMaterial(`vMat_${v.id}`, this.scene);
-        vMat.diffuseColor = new Color3(1.0, 1.0, 1.0);
-        vMat.emissiveColor = new Color3(1.0, 1.0, 1.0);
-        vMat.specularColor = new Color3(0.8, 0.8, 0.8);
-        vMat.alpha = 0.92;
-        vNode.material = vMat;
+        const defaultVMat = this.getVertexAnchorMaterial();
+        vNode.material = defaultVMat;
         vNode.setEnabled(false); // Hidden during normal gameplay to keep board clean
 
         // Make it isPickable only when enabled
@@ -1023,6 +1141,18 @@ export class BabylonGame {
         vNode.actionManager.registerAction(
           new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
             this.callbacks.onVertexClick?.(v.id);
+          })
+        );
+        vNode.actionManager.registerAction(
+          new ExecuteCodeAction((ActionManager as any).OnPointerOverTrigger, () => {
+            vNode.material = this.getVertexAnchorHoverMaterial();
+            vNode.scaling.set(1.25, 1.1, 1.25);
+          })
+        );
+        vNode.actionManager.registerAction(
+          new ExecuteCodeAction((ActionManager as any).OnPointerOutTrigger, () => {
+            vNode.material = defaultVMat;
+            vNode.scaling.set(1.0, 1.0, 1.0);
           })
         );
 
@@ -1051,11 +1181,8 @@ export class BabylonGame {
         edgeAnchor.position = new Vector3(edge.x, 1.00, edge.z);
         edgeAnchor.rotation.y = angleY;
 
-        const edgeMat = new StandardMaterial(`eMat_${edge.id}`, this.scene);
-        edgeMat.diffuseColor = new Color3(1.0, 0.85, 0.2);
-        edgeMat.emissiveColor = new Color3(0.4, 0.3, 0.05);
-        edgeMat.alpha = 0.72;
-        edgeAnchor.material = edgeMat;
+        const defaultEdgeMat = this.getEdgeAnchorMaterial();
+        edgeAnchor.material = defaultEdgeMat;
         edgeAnchor.setEnabled(false); // Hidden during normal gameplay
         edgeAnchor.isPickable = false;
 
@@ -1063,6 +1190,18 @@ export class BabylonGame {
         edgeAnchor.actionManager.registerAction(
           new ExecuteCodeAction(ActionManager.OnPickTrigger, () => {
             this.callbacks.onEdgeClick?.(edge.id);
+          })
+        );
+        edgeAnchor.actionManager.registerAction(
+          new ExecuteCodeAction((ActionManager as any).OnPointerOverTrigger, () => {
+            edgeAnchor.material = this.getEdgeAnchorHoverMaterial();
+            edgeAnchor.scaling.set(1.2, 1.2, 1.2);
+          })
+        );
+        edgeAnchor.actionManager.registerAction(
+          new ExecuteCodeAction((ActionManager as any).OnPointerOutTrigger, () => {
+            edgeAnchor.material = defaultEdgeMat;
+            edgeAnchor.scaling.set(1.0, 1.0, 1.0);
           })
         );
 
@@ -1077,10 +1216,7 @@ export class BabylonGame {
         arrow.position = new Vector3(edge.x, 1.15, edge.z);
         arrow.rotation.x = Math.PI / 2;
         arrow.rotation.y = angleY;
-        const arrowMat = new StandardMaterial(`arrMat_${edge.id}`, this.scene);
-        arrowMat.diffuseColor = new Color3(1.0, 0.85, 0.2);
-        arrowMat.emissiveColor = new Color3(0.5, 0.38, 0.04);
-        arrow.material = arrowMat;
+        arrow.material = this.getRoadArrowMaterial();
         arrow.setEnabled(false);
 
         this.roadArrowMeshes.set(edge.id, arrow);
@@ -1182,9 +1318,7 @@ export class BabylonGame {
             pieceMesh.position = new Vector3(v.x, 0.68, v.z);
           }
 
-          const mat = new StandardMaterial(`pieceMat_${vId}`, this.scene);
-          mat.diffuseColor = Color3.FromHexString(playerColor);
-          mat.specularColor = new Color3(0.25, 0.25, 0.25);
+          const mat = this.getPlayerPieceMaterial(playerColor);
           this.applyPieceMaterial(pieceMesh, mat);
           this.pieceMeshes.set(pieceKey, pieceMesh);
         }
@@ -1220,9 +1354,7 @@ export class BabylonGame {
           roadMesh.position = new Vector3(edge.x, 0.72, edge.z);
           roadMesh.rotation.y = angleY;
 
-          const mat = new StandardMaterial(`roadMat_${eId}`, this.scene);
-          mat.diffuseColor = Color3.FromHexString(playerColor);
-          mat.specularColor = new Color3(0.3, 0.3, 0.3);
+          const mat = this.getPlayerRoadMaterial(playerColor);
           roadMesh.material = mat;
           this.pieceMeshes.set(roadKey, roadMesh);
         }
@@ -1394,6 +1526,33 @@ export class BabylonGame {
         node.isPickable = false;
       });
     }
+
+    // Dynamic subtle breathing pulse for active placement guides
+    if (this.placementPulseObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.placementPulseObserver);
+      this.placementPulseObserver = null;
+    }
+
+    if (isPlacing) {
+      let pulseTick = 0;
+      this.placementPulseObserver = this.scene.onBeforeRenderObservable.add(() => {
+        pulseTick += 0.05;
+        const scale = 1.0 + 0.08 * Math.sin(pulseTick);
+        if (mode === 'road') {
+          this.roadArrowMeshes.forEach((m) => {
+            if (m.isEnabled()) m.scaling.set(scale, scale, scale);
+          });
+        } else if (mode === 'settlement' || mode === 'city') {
+          this.vertexNodes.forEach((v) => {
+            if (v.isEnabled()) v.scaling.set(scale, 1, scale);
+          });
+        }
+      });
+    } else {
+      this.vertexNodes.forEach((v) => v.scaling.set(1, 1, 1));
+      this.roadArrowMeshes.forEach((m) => m.scaling.set(1, 1, 1));
+      this.edgeNodes.forEach((e) => e.scaling.set(1, 1, 1));
+    }
   }
 
   /**
@@ -1480,12 +1639,38 @@ export class BabylonGame {
 
   public dispose(): void {
     window.removeEventListener('resize', this.handleResize);
+    if (this.placementPulseObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.placementPulseObserver);
+      this.placementPulseObserver = null;
+    }
+    if (this.robberAuraObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.robberAuraObserver);
+      this.robberAuraObserver = null;
+    }
+    if (this.robberAuraMesh) {
+      this.robberAuraMesh.dispose();
+      this.robberAuraMesh = null;
+    }
     this.clearPlacementPreview();
     this.clearBoard();
     this.robberHighlightMeshes.forEach((m) => m.dispose());
     this.robberHighlightMeshes = [];
     this.terrainMaterials.forEach((mat) => mat.dispose());
     this.terrainMaterials.clear();
+    this.playerMaterials.forEach((mat) => mat.dispose());
+    this.playerMaterials.clear();
+    this.roadMaterials.forEach((mat) => mat.dispose());
+    this.roadMaterials.clear();
+    this.vertexAnchorMaterial?.dispose();
+    this.vertexAnchorMaterial = null;
+    this.vertexAnchorHoverMaterial?.dispose();
+    this.vertexAnchorHoverMaterial = null;
+    this.edgeAnchorMaterial?.dispose();
+    this.edgeAnchorMaterial = null;
+    this.edgeAnchorHoverMaterial?.dispose();
+    this.edgeAnchorHoverMaterial = null;
+    this.roadArrowMaterial?.dispose();
+    this.roadArrowMaterial = null;
     if (this.blockSideMaterial) {
       this.blockSideMaterial.dispose();
       this.blockSideMaterial = null;

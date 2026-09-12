@@ -87,22 +87,30 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
       isAi: true,
       isConnected: true,
     },
-    {
-      playerId: 'ai_2',
-      username: 'Louis (Bot)',
-      color: '#3b82f6',
-      ready: true,
-      isAi: true,
-      isConnected: true,
-    },
-    {
-      playerId: 'ai_3',
-      username: 'William (Bot)',
-      color: '#10b981',
-      ready: true,
-      isAi: true,
-      isConnected: true,
-    },
+    ...((createOptions?.maxPlayers ?? 4) >= 3
+      ? [
+          {
+            playerId: 'ai_2',
+            username: 'Louis (Bot)',
+            color: '#3b82f6',
+            ready: true,
+            isAi: true,
+            isConnected: true,
+          },
+        ]
+      : []),
+    ...((createOptions?.maxPlayers ?? 4) >= 4
+      ? [
+          {
+            playerId: 'ai_3',
+            username: 'William (Bot)',
+            color: '#10b981',
+            ready: true,
+            isAi: true,
+            isConnected: true,
+          },
+        ]
+      : []),
   ]);
   const [soloTurnDuration, setSoloTurnDuration] = useState<number>(createOptions?.turnDurationSeconds || 60);
   const [soloTargetVp, setSoloTargetVp] = useState<number>(createOptions?.targetVictoryPoints || 10);
@@ -132,23 +140,27 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
           isAi: false,
           isConnected: true,
         },
-        {
+      ];
+      if (maxP >= 2) {
+        initial.push({
           playerId: 'ai_1',
           username: 'Candamir (Bot)',
           color: '#ef4444',
           ready: true,
           isAi: true,
           isConnected: true,
-        },
-        {
+        });
+      }
+      if (maxP >= 3) {
+        initial.push({
           playerId: 'ai_2',
           username: 'Louis (Bot)',
           color: '#3b82f6',
           ready: true,
           isAi: true,
           isConnected: true,
-        },
-      ];
+        });
+      }
       if (maxP >= 4) {
         initial.push({
           playerId: 'ai_3',
@@ -519,7 +531,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
 
   // Check if match can be started (at least 2 players, and all human players ready)
   const allReady = seats.every((s) => s.ready || s.isAi);
-  const canStart = amHost && allReady && seats.length >= 1;
+  const canStart = amHost && allReady && seats.length >= 2;
 
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in select-none">
@@ -979,7 +991,9 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                 <span>
                   {isStarting || countdownNumber !== null
                     ? 'Launching Match...'
-                    : !allReady && seats.length > 1
+                    : seats.length < 2
+                    ? 'Waiting for Voyagers (Min 2)...'
+                    : !allReady
                     ? 'Waiting for Crew Ready'
                     : 'Set Sail (Start Match)'}
                 </span>

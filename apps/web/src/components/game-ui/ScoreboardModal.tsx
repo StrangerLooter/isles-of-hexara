@@ -19,6 +19,18 @@ export const ScoreboardModal: React.FC<ScoreboardModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'histogram' | 'standings'>('histogram');
 
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   // Calculate dice roll frequency histogram for sums 2 through 12

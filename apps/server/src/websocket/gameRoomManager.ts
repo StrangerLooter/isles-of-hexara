@@ -552,4 +552,20 @@ export class GameRoomManager {
       logger.error({ err }, 'Failed to persist game record or update profiles');
     }
   }
+
+  resetGame(code: string): void {
+    const timer = this.turnTimers.get(code);
+    if (timer) {
+      clearTimeout(timer.timeout);
+      this.turnTimers.delete(code);
+    }
+    const wd = this.roomWatchdogs.get(code);
+    if (wd) {
+      clearTimeout(wd);
+      this.roomWatchdogs.delete(code);
+    }
+    this.activeGames.delete(code);
+    this.actionCounters.delete(code);
+    this.turnCounters.delete(code);
+  }
 }

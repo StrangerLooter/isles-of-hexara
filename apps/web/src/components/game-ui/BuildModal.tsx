@@ -21,6 +21,18 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
 
   const [isBuyModalOpen, setBuyModalOpen] = React.useState(false);
 
+  React.useEffect(() => {
+    if (!isBuildModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setBuildModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isBuildModalOpen, setBuildModalOpen]);
+
   if (!isBuildModalOpen || !gameState) return null;
 
   const player = gameState.players[localPlayerId];
@@ -156,6 +168,31 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
                 ((isSetup && (item.type === 'road' || item.type === 'settlement')) ||
                   (isMainPhase && canAfford && item.remaining > 0));
 
+              const getDisabledReason = () => {
+                if (!isMyTurn) return 'Not your turn';
+                if (isSetup) {
+                  if (item.type !== 'road' && item.type !== 'settlement') {
+                    return 'Setup Phase: Roads & Settlements only';
+                  }
+                }
+                if (item.remaining <= 0) {
+                  return isDevCard ? 'Deck is depleted' : 'Piece supply limit reached';
+                }
+                if (!canAfford) {
+                  const missing = Object.entries(item.cost)
+                    .filter(([res, count]) => (player.resources[res as keyof typeof player.resources] ?? 0) < count)
+                    .map(([res, count]) => {
+                      const have = player.resources[res as keyof typeof player.resources] ?? 0;
+                      return `${count - have} ${res}`;
+                    })
+                    .join(', ');
+                  return `Missing: ${missing}`;
+                }
+                return null;
+              };
+
+              const disabledReason = getDisabledReason();
+
               return (
                 <div
                   key={item.type}
@@ -163,8 +200,9 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
                   className={`p-3.5 rounded-xl border transition-all flex items-center justify-between ${
                     canBuild
                       ? 'border-amber-600/50 hover:border-amber-400 bg-[#2b170c]/80 hover:bg-[#3d2315] cursor-pointer shadow-lg hover:scale-101'
-                      : 'border-amber-950/40 bg-[#170905]/60 opacity-50 cursor-not-allowed'
+                      : 'border-amber-950/40 bg-[#170905]/60 opacity-60 cursor-not-allowed'
                   }`}
+                  title={disabledReason || item.label}
                 >
                   <div className="flex items-start gap-3">
                     <div className="p-2.5 rounded-lg bg-[#3d2315] border border-amber-600/40 text-amber-300">
@@ -178,7 +216,9 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
                         </span>
                       </div>
                       <p className="text-[11px] text-amber-200/70 mt-0.5">{item.description}</p>
-                      <div className="flex items-center gap-1.5 mt-2">
+                      
+                      {/* Cost Badges or Disabled Reason */}
+                      <div className="flex flex-wrap items-center gap-1.5 mt-2">
                         {Object.entries(item.cost).map(([res, count]) => (
                           <span
                             key={res}
@@ -187,16 +227,22 @@ export const BuildModal: React.FC<BuildModalProps> = ({ onBuyDevCard }) => {
                             {count} {res}
                           </span>
                         ))}
+                        {disabledReason && (
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-950/60 text-red-300 border border-red-800/40">
+                            ⚠️ {disabledReason}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   <button
                     disabled={!canBuild}
-                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md ${
+                    title={disabledReason || ''}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md shrink-0 ml-2 ${
                       canBuild
-                        ? 'catan-btn-gold'
-                        : 'bg-[#241710] text-amber-200/40 border border-amber-900/40'
+                        ? 'catan-btn-gold cursor-pointer hover:scale-105 active:scale-95'
+                        : 'bg-[#241710] text-amber-200/40 border border-amber-900/40 cursor-not-allowed'
                     }`}
                   >
                     {isDevCard

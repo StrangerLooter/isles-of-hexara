@@ -50,10 +50,26 @@ export const TradeModal: React.FC<TradeModalProps> = ({
     ore: 0,
   });
 
+  React.useEffect(() => {
+    if (!isTradeModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setTradeModalOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isTradeModalOpen, setTradeModalOpen]);
+
   if (!isTradeModalOpen || !gameState) return null;
 
   const player = gameState.players[localPlayerId];
   if (!player) return null;
+
+  const isTwoPlayer = gameState.playerOrder.length === 2;
+  const otherPlayerId = gameState.playerOrder.find((id) => id !== localPlayerId);
+  const otherPlayer = otherPlayerId ? gameState.players[otherPlayerId] : null;
 
   // Compute actual maritime trade rate using harbors
   const maritimeRate = getMaritimeTradeRate(gameState, localPlayerId, giving);
@@ -356,6 +372,8 @@ export const TradeModal: React.FC<TradeModalProps> = ({
                       ? 'Select Offer'
                       : totalRequested === 0
                       ? 'Select Request'
+                      : isTwoPlayer && otherPlayer
+                      ? `Send Offer to ${otherPlayer.username}`
                       : 'Send Trade Offer'}
                   </button>
                 </div>

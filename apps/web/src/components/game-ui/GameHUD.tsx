@@ -160,8 +160,40 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     };
   });
 
-  // Settings State
-  const [settings, setSettings] = useState<GameSettingsState>(DEFAULT_SETTINGS);
+  // Settings State with Persistence
+  const [settings, setSettings] = useState<GameSettingsState>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('hexara_game_settings');
+        if (saved) {
+          return { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+        }
+      } catch {}
+    }
+    return DEFAULT_SETTINGS;
+  });
+
+  const handleUpdateSettings = (newSettings: GameSettingsState) => {
+    setSettings(newSettings);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('hexara_game_settings', JSON.stringify(newSettings));
+      } catch {}
+    }
+    soundManager.setMusicVolume(newSettings.musicVolume / 100);
+    soundManager.setSfxVolume(newSettings.soundVolume / 100);
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('reduced-motion', Boolean(newSettings.reducedMotion));
+    }
+  };
+
+  useEffect(() => {
+    soundManager.setMusicVolume(settings.musicVolume / 100);
+    soundManager.setSfxVolume(settings.soundVolume / 100);
+    if (typeof document !== 'undefined') {
+      document.documentElement.classList.toggle('reduced-motion', Boolean(settings.reducedMotion));
+    }
+  }, []);
 
   // Dice Roll History for Histogram
   const [diceHistory, setDiceHistory] = useState<number[]>([7, 6, 8, 5, 9, 7, 4, 6, 8, 10, 3]);
@@ -351,7 +383,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   if (!gameState) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-30 flex flex-col justify-between p-2 sm:p-3 select-none overflow-hidden font-sans">
+    <div className="pointer-events-none fixed inset-0 z-30 flex flex-col justify-between select-none overflow-hidden font-sans pl-[max(0.5rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))]">
       {/* ============================================================ */}
       {/* 1. TOP HEADER BAR: DESKTOP & MOBILE ADAPTIVE                 */}
       {/* ============================================================ */}
@@ -359,13 +391,14 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       {/* ============================================================ */}
       {/* 1. TOP HEADER BAR: BRAND, COMPACT PLAYER CARDS, TIMER & DICE */}
       {/* ============================================================ */}
-      <header className="pointer-events-none flex flex-col w-full px-2 sm:px-4 pt-2 gap-1.5 z-30 shrink-0">
+      <header className="pointer-events-none flex flex-col w-full px-2 sm:px-4 pt-[max(0.5rem,env(safe-area-inset-top))] gap-1.5 z-30 shrink-0">
         {/* Main Top Bar Row */}
         <div className="flex items-center justify-between w-full gap-2">
           {/* Left: Brand, Harbor Back Button & Room Code Badge */}
           <div className="pointer-events-auto flex items-center gap-2">
             <button
               onClick={handleLeaveMatch}
+              aria-label="Return to Harbor / Main Menu"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/75 hover:bg-red-950/80 border border-amber-600/50 hover:border-red-500/80 text-amber-200 hover:text-red-200 text-xs font-bold transition-all shadow-md cursor-pointer active:scale-95 shrink-0"
               title="Return to Harbor / Main Menu"
             >
@@ -380,6 +413,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               {roomCode && (
                 <button
                   onClick={handleCopyRoom}
+                  aria-label="Click to copy room code"
                   className="flex items-center gap-1 ml-1 px-2 py-0.5 rounded-lg bg-black/60 hover:bg-black/90 border border-amber-600/40 text-amber-300 font-mono text-[11px] font-bold transition-all active:scale-95 cursor-pointer"
                   title="Click to copy room code"
                 >
@@ -580,6 +614,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 soundManager.playClick();
                 setMenuExpanded(true);
               }}
+              aria-label="Expand Game Menu"
               className="w-11 h-11 rounded-2xl bg-[#24130c]/95 hover:bg-[#381a10] border-2 border-amber-600/70 hover:border-amber-400 text-amber-300 hover:text-white flex items-center justify-center transition-all shadow-[0_4px_15px_rgba(0,0,0,0.8)] active:scale-95 cursor-pointer"
               title="Expand Game Menu (M)"
             >
@@ -595,6 +630,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   setMenuExpanded(false);
                   setLeftDrawer('none');
                 }}
+                aria-label="Collapse Menu"
                 className="flex items-center justify-between px-3 py-2 rounded-xl bg-black/50 hover:bg-black/80 border border-amber-600/40 text-amber-200/80 hover:text-white text-xs font-bold transition-all cursor-pointer mb-1"
                 title="Collapse Menu (M or Esc)"
               >
@@ -801,8 +837,26 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
           {/* Phase instruction */}
           {buildMode === 'none' && phaseInstruction && (
-            <div className="pointer-events-none mt-2 px-4 py-1 rounded-xl border border-amber-500/40 bg-black/70 backdrop-blur-md flex items-center gap-1.5 shadow-lg">
+            <div
+              role="status"
+              aria-live="polite"
+              className="pointer-events-none mt-2 px-4 py-1.5 rounded-xl border border-amber-500/40 bg-black/70 backdrop-blur-md flex items-center gap-1.5 shadow-lg"
+            >
               <span className="text-[11px] font-bold text-amber-200">{phaseInstruction}</span>
+            </div>
+          )}
+
+          {/* Waiting for opponent turn ticker */}
+          {buildMode === 'none' && !isMyTurn && gameState.phase !== 'FINISHED' && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="pointer-events-none mt-2 px-4 py-1.5 rounded-xl border border-amber-600/40 bg-[#160a05]/85 backdrop-blur-md flex items-center gap-2 shadow-lg animate-pulse"
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span className="text-[11px] text-amber-200/90 font-medium">
+                Waiting for <strong className="text-amber-300 font-bold">{gameState.players[activePlayerId]?.username || 'Opponent'}</strong> to complete turn...
+              </span>
             </div>
           )}
 
@@ -828,7 +882,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       {/* ============================================================ */}
       {/* 3. BOTTOM CONTROLS: COMPACT RESOURCES & PROMINENT ACTIONS   */}
       {/* ============================================================ */}
-      <footer className="pointer-events-none flex items-end justify-between w-full px-2 sm:px-4 pb-2 sm:pb-3 gap-2 z-30 shrink-0">
+      <footer className="pointer-events-none flex items-end justify-between w-full px-2 sm:px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] gap-2 z-30 shrink-0">
         {/* Left: Mobile Menu / Info Button matching Screenshot_20260911-144413 */}
         <div className="pointer-events-auto flex items-center gap-2">
           {/* Mobile hamburger button */}
@@ -837,6 +891,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               soundManager.playClick();
               setBottomSheetOpen(true);
             }}
+            aria-label="Open Mobile Menu"
             className="md:hidden w-11 h-11 rounded-xl bg-gradient-to-b from-[#d97706] to-[#b45309] border-2 border-amber-200 text-slate-950 flex items-center justify-center shadow-xl active:scale-95"
             title="Open Menu"
           >
@@ -849,6 +904,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               soundManager.playClick();
               setAlmanacOpen(true);
             }}
+            aria-label="Almanac and Rules"
             className="w-10 h-10 rounded-xl bg-black/70 hover:bg-black/90 border border-amber-600/50 text-amber-300 flex items-center justify-center shadow-lg transition-all active:scale-95"
             title="Almanac & Building Costs"
           >
@@ -892,6 +948,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                   useGameStore.getState().setSelectedEdgeId(null);
                   setBuildMode('none');
                 }}
+                aria-label="Cancel Placement"
                 className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-gradient-to-b from-[#991b1b] to-[#7f1d1d] border-2 border-red-400 text-white shadow-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all"
                 title="Cancel Placement"
               >
@@ -899,6 +956,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               </button>
               <button
                 onClick={() => onConfirmPlacement?.()}
+                aria-label="Confirm Placement"
                 className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 border-2 border-emerald-300 text-white shadow-[0_0_25px_rgba(16,185,129,0.9)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all animate-pulse"
                 title="Confirm Placement"
               >
@@ -1041,7 +1099,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           isOpen={isSettingsOpen}
           onClose={() => setSettingsOpen(false)}
           settings={settings}
-          onUpdateSettings={setSettings}
+          onUpdateSettings={handleUpdateSettings}
         />
 
         {/* Profile & Avatar Modal */}
@@ -1058,6 +1116,9 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           onClose={() => setDevCardPanelOpen(false)}
           devCards={localPlayer?.devCards || []}
           canPlay={isMyTurn && gameState.phase === 'MAIN'}
+          hasPlayedDevCardThisTurn={localPlayer?.hasPlayedDevCardThisTurn}
+          boughtThisTurn={localPlayer?.boughtDevCardsThisTurn}
+          isMyTurn={isMyTurn}
           onPlay={(card, params) => {
             onPlayDevCard?.(card, params);
           }}

@@ -42,7 +42,7 @@ export const PlayerRibbonCard: React.FC<PlayerRibbonCardProps> = ({
       <div
         className={`relative flex items-center h-10 sm:h-11 px-2.5 rounded-xl border-2 transition-all duration-300 shadow-md ${
           isActive
-            ? 'border-amber-400 ring-2 ring-amber-400/50 scale-105 shadow-[0_0_20px_rgba(245,158,11,0.6)] z-20'
+            ? 'border-amber-400 ring-4 ring-amber-400/80 scale-105 shadow-[0_0_25px_rgba(245,158,11,0.85)] animate-pulse z-20'
             : 'border-[#3a2012]/80 bg-[#160c07]/90 hover:border-amber-700/60 opacity-90 hover:opacity-100'
         }`}
         style={{
@@ -113,7 +113,7 @@ export const PlayerRibbonCard: React.FC<PlayerRibbonCardProps> = ({
       <div
         className={`w-full p-2.5 rounded-2xl transition-all duration-300 flex items-center justify-between border-2 shadow-lg ${
           isActive
-            ? 'border-amber-400 bg-gradient-to-r from-amber-950/90 via-[#3a1d12] to-black/90 shadow-[0_0_20px_rgba(245,158,11,0.6)] ring-1 ring-amber-300 scale-[1.02]'
+            ? 'border-amber-400 bg-gradient-to-r from-amber-950/90 via-[#3a1d12] to-black/90 ring-4 ring-amber-400/80 scale-[1.02] shadow-[0_0_25px_rgba(245,158,11,0.85)] animate-pulse'
             : 'border-amber-900/40 bg-black/60 hover:border-amber-700/60'
         }`}
       >
@@ -158,7 +158,7 @@ export const PlayerRibbonCard: React.FC<PlayerRibbonCardProps> = ({
       <div
         className={`px-2.5 py-1.5 rounded-xl border-2 flex items-center gap-2 transition-all shadow-md shrink-0 ${
           isActive
-            ? 'border-amber-400 bg-gradient-to-b from-amber-950 via-[#3a1d12] to-black shadow-[0_0_15px_rgba(245,158,11,0.7)] scale-105'
+            ? 'border-amber-400 bg-gradient-to-b from-amber-950 via-[#3a1d12] to-black ring-2 ring-amber-400/80 shadow-[0_0_18px_rgba(245,158,11,0.85)] scale-105 animate-pulse'
             : 'border-amber-900/40 bg-black/60'
         }`}
       >
@@ -194,7 +194,7 @@ export const PlayerRibbonCard: React.FC<PlayerRibbonCardProps> = ({
       <div
         className={`relative flex items-center p-2 rounded-xl transition-all duration-300 shadow-xl border ${
           isActive
-            ? 'ring-2 ring-amber-400 border-amber-300 scale-105 shadow-[0_0_25px_rgba(245,158,11,0.7)]'
+            ? 'ring-4 ring-amber-400/80 border-amber-300 scale-105 shadow-[0_0_25px_rgba(245,158,11,0.85)] animate-pulse'
             : 'border-amber-950/60 hover:brightness-110'
         }`}
         style={{
@@ -204,7 +204,10 @@ export const PlayerRibbonCard: React.FC<PlayerRibbonCardProps> = ({
       >
         {/* Active Turn Indicator Badge */}
         {isActive && (
-          <div className="absolute -top-2.5 -right-2.5 bg-amber-400 text-amber-950 p-1 rounded-full shadow-lg border border-amber-200 animate-spin">
+          <div
+            className="absolute -top-2.5 -right-2.5 bg-amber-400 text-amber-950 p-1 rounded-full shadow-lg border border-amber-200 animate-bounce"
+            title="Active Turn"
+          >
             <Dices className="w-3.5 h-3.5" />
           </div>
         )}

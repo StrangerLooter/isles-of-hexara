@@ -421,6 +421,28 @@ export function setupSocketServer(httpServer: HttpServer): {
       });
     }
 
+    // Rematch vote / restart match
+    socket.on(CLIENT_EVENTS.REMATCH_VOTE, (data: unknown) => {
+      const code = (typeof data === 'object' && data !== null && 'code' in data && typeof (data as any).code === 'string')
+        ? (data as any).code
+        : currentGameCode;
+      if (!code) return;
+
+      const resetRes = lobbyManager.resetLobbyForRematch(code, userId);
+      if (resetRes.success && resetRes.lobby) {
+        roomManager.resetGame(code);
+        io.to(`game:${code}`).emit(
+          SERVER_EVENTS.LOBBY_STATE,
+          lobbyManager.toPayload(resetRes.lobby)
+        );
+        io.to(`game:${code}`).emit(SERVER_EVENTS.REMATCH_STATUS, {
+          success: true,
+          code,
+          message: 'Rematch initiated! Assembling crew back in the voyage lobby.',
+        });
+      }
+    });
+
     // H. CHAT
     socket.on(CLIENT_EVENTS.SEND_CHAT, (data: unknown) => {
       if (!rateLimiter.checkChatLimit(socket.id)) {

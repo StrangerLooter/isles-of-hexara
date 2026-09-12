@@ -227,6 +227,18 @@ export default function GamePage() {
         setTimeout(() => setErrorToast(null), 3500);
       });
 
+      socket.on(SERVER_EVENTS.REMATCH_STATUS, () => {
+        sessionStorage.removeItem('hexara_active_game_state');
+        window.location.hash = '#/';
+      });
+
+      socket.on(SERVER_EVENTS.LOBBY_STATE, (payload: any) => {
+        if (payload?.status === 'waiting') {
+          sessionStorage.removeItem('hexara_active_game_state');
+          window.location.hash = '#/';
+        }
+      });
+
       socket.on(SERVER_EVENTS.ERROR, (err: ServerErrorPayload) => {
         soundManager.playError();
         setErrorToast(err.message);
@@ -807,6 +819,18 @@ export default function GamePage() {
 
   const handlePlayAgain = () => {
     soundManager.playClick();
+    const isOnline = isOnlineConnected && socketRef.current;
+    const roomCode = sessionStorage.getItem('hexara_room_code') || gameState?.id || 'HEXARA';
+
+    if (isOnline) {
+      // Emit rematch vote to server for online multiplayer
+      socketRef.current?.emit(CLIENT_EVENTS.REMATCH_VOTE, { code: roomCode });
+      sessionStorage.removeItem('hexara_active_game_state');
+      window.location.hash = '#/';
+      return;
+    }
+
+    // Solo mode: rebuild clean game respecting 2, 3, or 4 players
     const storedCount = Number(sessionStorage.getItem('hexara_player_count') || '4');
     const storedScenarioId = sessionStorage.getItem('hexara_scenario_id') || 'first_island';
     const storedScenarioName = sessionStorage.getItem('hexara_scenario_name') || 'The First Island';
@@ -818,12 +842,16 @@ export default function GamePage() {
     const persistedId = localStorage.getItem('hexara_player_id') || sessionStorage.getItem('hexara_player_id') || localPlayerId;
     const persistedName = localStorage.getItem('hexara_username') || sessionStorage.getItem('hexara_username') || 'Captain Voyager';
 
-    const playerList = [
-      { id: persistedId, username: persistedName },
-      { id: 'ai_1', username: 'Candamir (Bot)', isAi: true },
-      { id: 'ai_2', username: 'Louis (Bot)', isAi: true },
+    const playerList: Array<{ id: string; username: string; isAi?: boolean }> = [
+      { id: persistedId, username: persistedName, isAi: false },
     ];
-    if (storedCount === 4) {
+    if (storedCount >= 2) {
+      playerList.push({ id: 'ai_1', username: 'Candamir (Bot)', isAi: true });
+    }
+    if (storedCount >= 3) {
+      playerList.push({ id: 'ai_2', username: 'Louis (Bot)', isAi: true });
+    }
+    if (storedCount >= 4) {
       playerList.push({ id: 'ai_3', username: 'William (Bot)', isAi: true });
     }
 

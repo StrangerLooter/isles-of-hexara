@@ -29,6 +29,25 @@ export const ChatLogModal: React.FC<ChatLogModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'chat' | 'log'>('chat');
   const [inputVal, setInputVal] = useState('');
+  const chatEndRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  React.useEffect(() => {
+    if (activeTab === 'chat') {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatMessages, activeTab]);
 
   if (!isOpen) return null;
 
@@ -115,6 +134,7 @@ export const ChatLogModal: React.FC<ChatLogModalProps> = ({
                     </div>
                   ))
                 )}
+                <div ref={chatEndRef} />
               </div>
             </div>
           ) : (
@@ -136,21 +156,29 @@ export const ChatLogModal: React.FC<ChatLogModalProps> = ({
         {activeTab === 'chat' && (
           <form
             onSubmit={handleSend}
-            className="p-4 bg-[#1a0808] border-t border-[#d97706]/30 flex gap-3"
+            className="p-4 bg-[#1a0808] border-t border-[#d97706]/30 flex flex-col gap-1.5"
           >
-            <input
-              type="text"
-              value={inputVal}
-              onChange={(e) => setInputVal(e.target.value)}
-              placeholder="Chat ..."
-              className="flex-1 px-4 py-2.5 bg-[#0e0404] border border-[#d97706]/40 rounded-xl text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-400 text-sm shadow-inner"
-            />
-            <button
-              type="submit"
-              className="px-6 py-2.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-amber-950 font-black rounded-xl border border-amber-400 shadow-md transition-all active:scale-95 text-sm uppercase tracking-wider"
-            >
-              Send
-            </button>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                maxLength={120}
+                value={inputVal}
+                onChange={(e) => setInputVal(e.target.value)}
+                placeholder="Send a dispatch to table..."
+                className="flex-1 px-4 py-2.5 bg-[#0e0404] border border-[#d97706]/40 rounded-xl text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-400 text-sm shadow-inner"
+              />
+              <button
+                type="submit"
+                className="px-6 py-2.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-amber-950 font-black rounded-xl border border-amber-400 shadow-md transition-all active:scale-95 text-sm uppercase tracking-wider"
+              >
+                Send
+              </button>
+            </div>
+            <div className="flex justify-end pr-1">
+              <span className={`text-[10px] font-mono ${inputVal.length >= 110 ? 'text-amber-400 font-bold' : 'text-stone-500'}`}>
+                {inputVal.length}/120
+              </span>
+            </div>
           </form>
         )}
       </div>

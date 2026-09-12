@@ -41,7 +41,18 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       game.syncGameState(gameState);
     }
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && canvasRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        game.resize();
+      });
+      resizeObserver.observe(canvasRef.current);
+    }
+
     return () => {
+      if (resizeObserver) {
+        resizeObserver.disconnect();
+      }
       game.dispose();
       gameInstanceRef.current = null;
       if (typeof window !== 'undefined') {

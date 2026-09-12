@@ -26,6 +26,7 @@ export const CLIENT_EVENTS = {
   TRADE_CANCEL: 'client:trade_cancel',
   END_TURN: 'client:end_turn',
   SEND_CHAT: 'client:send_chat',
+  REMATCH_VOTE: 'client:rematch_vote',
 } as const;
 
 export type ClientEventName = (typeof CLIENT_EVENTS)[keyof typeof CLIENT_EVENTS];

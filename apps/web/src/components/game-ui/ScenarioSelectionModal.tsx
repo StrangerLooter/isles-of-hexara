@@ -68,6 +68,7 @@ export interface MatchOptions {
   randomMap: boolean;
   aiDifficulty: 'NOVICE' | 'EXPERT' | 'MASTER';
   turnDurationSeconds: number;
+  playerCount?: number;
 }
 
 interface ScenarioSelectionModalProps {
@@ -83,6 +84,7 @@ export const ScenarioSelectionModal: React.FC<ScenarioSelectionModalProps> = ({
 }) => {
   const [selectedScenario, setSelectedScenario] = useState<ScenarioConfig>(SCENARIOS[0]);
   const [vpTarget, setVpTarget] = useState(10);
+  const [playerCount, setPlayerCount] = useState<number>(4);
   const [randomPlayerStarts, setRandomPlayerStarts] = useState(true);
   const [friendlyRobber, setFriendlyRobber] = useState(false);
   const [balancedDice, setBalancedDice] = useState(true);
@@ -105,6 +107,7 @@ export const ScenarioSelectionModal: React.FC<ScenarioSelectionModalProps> = ({
       randomMap,
       aiDifficulty,
       turnDurationSeconds: finalTurnDuration,
+      playerCount,
     });
     onClose();
   };
@@ -175,6 +178,30 @@ export const ScenarioSelectionModal: React.FC<ScenarioSelectionModalProps> = ({
 
           {/* Right: Custom Match Settings & AI Bot Roster */}
           <div className="col-span-6 space-y-6 bg-[#180606]/80 p-6 rounded-xl border border-[#d97706]/30">
+            {/* Player Count Selection */}
+            <div>
+              <div className="flex justify-between text-sm font-bold text-gray-200 mb-2 font-serif">
+                <span>Voyagers (Player Count)</span>
+                <span className="text-amber-400 text-base font-black">{playerCount} Players</span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {([2, 3, 4] as const).map((count) => (
+                  <button
+                    key={count}
+                    type="button"
+                    onClick={() => setPlayerCount(count)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-bold uppercase transition-all ${
+                      playerCount === count
+                        ? 'bg-gradient-to-r from-amber-600 to-amber-700 text-amber-950 font-black shadow-md border border-amber-300'
+                        : 'bg-[#260808] text-gray-300 border border-amber-900/30 hover:border-amber-600/50 hover:text-amber-200'
+                    }`}
+                  >
+                    {count} Voyagers
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Victory Points Target */}
             <div>
               <div className="flex justify-between text-sm font-bold text-gray-200 mb-2 font-serif">

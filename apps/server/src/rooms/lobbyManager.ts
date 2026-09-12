@@ -70,7 +70,7 @@ export class LobbyManager {
       seats: [hostSeat],
       settings: {
         ...settings,
-        maxPlayers: settings.maxPlayers === 3 ? 3 : 4,
+        maxPlayers: ([2, 3, 4] as number[]).includes(settings.maxPlayers) ? (settings.maxPlayers as 2 | 3 | 4) : 4,
         targetVictoryPoints: settings.targetVictoryPoints || 10,
         scenarioId: settings.scenarioId || 'first_island',
         turnDurationSeconds: settings.turnDurationSeconds || 60,
@@ -406,6 +406,31 @@ export class LobbyManager {
       lobby,
       players: finalPlayers,
     };
+  }
+
+  resetLobbyForRematch(
+    code: string,
+    _requesterPlayerId: string
+  ): { success: boolean; lobby?: Lobby; error?: string } {
+    const formattedCode = code.toUpperCase();
+    const lobby = this.lobbies.get(formattedCode);
+
+    if (!lobby) {
+      return { success: false, error: 'ROOM_NOT_FOUND' };
+    }
+
+    // Retain only human players, clear auto-added AI players so lobby starts clean
+    lobby.seats = lobby.seats.filter((s) => !s.isAi);
+
+    // Host is ready by default, guests need to ready up
+    for (const seat of lobby.seats) {
+      seat.ready = seat.playerId === lobby.hostId;
+    }
+
+    lobby.status = 'waiting';
+    lobby.settings.seed = Math.floor(100000 + Math.random() * 900000);
+
+    return { success: true, lobby };
   }
 
   toPayload(lobby: Lobby): ServerLobbyStatePayload {

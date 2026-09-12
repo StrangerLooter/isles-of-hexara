@@ -20,7 +20,7 @@ export const createGameSchema = z.object({
   scenarioName: z.string().optional(),
   seed: z.number().optional(),
   targetVictoryPoints: z.number().int().min(3).max(20).default(10),
-  maxPlayers: z.union([z.literal(3), z.literal(4)]).default(4),
+  maxPlayers: z.union([z.literal(2), z.literal(3), z.literal(4)]).default(4),
   mode: z.enum(['solo', 'online']).default('online'),
   turnDurationSeconds: z.number().int().min(10).max(600).default(60),
 });

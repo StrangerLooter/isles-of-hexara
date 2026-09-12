@@ -19,6 +19,7 @@ export interface GameSettingsState {
   placeBuildingEffect: boolean;
   playerTurnTicker: boolean;
   fastResourceDistribution: boolean;
+  reducedMotion: boolean;
 }
 
 export const DEFAULT_SETTINGS: GameSettingsState = {
@@ -35,6 +36,7 @@ export const DEFAULT_SETTINGS: GameSettingsState = {
   placeBuildingEffect: true,
   playerTurnTicker: true,
   fastResourceDistribution: false,
+  reducedMotion: false,
 };
 
 interface SettingsModalProps {
@@ -51,6 +53,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateSettings,
 }) => {
   const [activeTab, setActiveTab] = useState<'general' | 'game' | 'visuals'>('general');
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -219,6 +233,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 { key: 'placeBuildingEffect' as const, label: 'Place building effect' },
                 { key: 'playerTurnTicker' as const, label: '"Players Turn" ticker' },
                 { key: 'fastResourceDistribution' as const, label: 'Fast resource distribution' },
+                { key: 'reducedMotion' as const, label: 'Reduced Motion (Accessibility Mode)' },
               ].map((opt) => (
                 <label
                   key={opt.key}

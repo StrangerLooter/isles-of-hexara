@@ -50,7 +50,7 @@ export const CAMPAIGN_SCENARIOS: ScenarioItem[] = [
     name: 'The First Island',
     subtitle: 'Classic Hexara Archipelago',
     unlocked: true,
-    badge: '3-4 Voyagers',
+    badge: '2-4 Voyagers',
     imageBg: 'from-amber-700/80 via-amber-800/70 to-amber-950/90',
     description:
       'The foundational maritime contest. Settle the fertile central island, balance agriculture and ore mining, pave the Longest Road, and claim 10 Victory Points.',
@@ -67,7 +67,7 @@ export const CAMPAIGN_SCENARIOS: ScenarioItem[] = [
     name: 'Ore For Wool',
     subtitle: 'Pasture Abundance & Mountain Scarcity',
     unlocked: true,
-    badge: '3-4 Voyagers',
+    badge: '2-4 Voyagers',
     imageBg: 'from-emerald-700/80 via-emerald-800/70 to-emerald-950/90',
     description:
       'Lush emerald pastures produce endless wool, but mountain ore is scarce and precious! Master domestic barter and maritime shipping to secure city upgrades.',
@@ -83,7 +83,7 @@ export const CAMPAIGN_SCENARIOS: ScenarioItem[] = [
     name: 'The Harbormaster',
     subtitle: 'Maritime Trade Dominance',
     unlocked: true,
-    badge: '3-4 Voyagers',
+    badge: '2-4 Voyagers',
     imageBg: 'from-sky-700/80 via-sky-800/70 to-sky-950/90',
     description:
       'Coastal colonies carry supreme strategic importance. Settle strategic ports, control coastal waterways, and claim the coveted Harbormaster trophy.',
@@ -442,9 +442,19 @@ export const ScenarioModal: React.FC<ScenarioModalProps> = ({
                 {/* Player Count */}
                 <div>
                   <label className="text-[11px] font-bold text-amber-200/80 block mb-1.5">
-                    Voyagers (3 or 4 Players)
+                    Voyagers (2, 3 or 4 Players)
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => setPlayerCount(2)}
+                      className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border ${
+                        playerCount === 2
+                          ? 'bg-amber-700 text-white border-amber-300 shadow'
+                          : 'bg-[#24140c] text-amber-200/60 border-amber-900/60'
+                      }`}
+                    >
+                      2 Voyagers
+                    </button>
                     <button
                       onClick={() => setPlayerCount(3)}
                       className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border ${

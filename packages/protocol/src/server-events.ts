@@ -12,6 +12,7 @@ export const SERVER_EVENTS = {
   ERROR: 'server:error',
   CHAT_MESSAGE: 'server:chat_message',
   COUNTDOWN: 'server:countdown',
+  REMATCH_STATUS: 'server:rematch_status',
 } as const;
 
 export type ServerEventName = (typeof SERVER_EVENTS)[keyof typeof SERVER_EVENTS];
@@ -29,7 +30,7 @@ export interface ServerLobbySettings {
   scenarioId: string;
   scenarioName?: string;
   targetVictoryPoints: number;
-  maxPlayers: 3 | 4;
+  maxPlayers: 2 | 3 | 4;
   mode: 'solo' | 'online';
   seed?: number;
   turnDurationSeconds?: number;
