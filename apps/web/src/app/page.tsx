@@ -53,6 +53,40 @@ function generateRoomCode(): string {
   return result;
 }
 
+/** Generate a UUID v4 for use as a unique guest player ID. */
+function generateGuestId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `guest_${crypto.randomUUID()}`;
+  }
+  // Fallback for older browsers
+  return `guest_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+}
+
+const PIRATE_NAMES = [
+  'Captain Voss', 'Lady Morwen', 'Iron Dekkar', 'The Pale Mariner',
+  'Sable Rourke', 'Red Lyssa', 'Quartermaster Dun', 'Navigator Fen',
+  'Drake Halvard', 'Captain Edris', 'Corsair Wynn', 'First Mate Oren',
+];
+
+/** Get or create a persistent unique player identity for this browser. */
+function getOrCreateGuestProfile(): { id: string; username: string } {
+  if (typeof window === 'undefined') {
+    return { id: generateGuestId(), username: PIRATE_NAMES[0] };
+  }
+  let id = localStorage.getItem('hexara_player_id');
+  if (!id || id === 'guest_ram') {
+    id = generateGuestId();
+    localStorage.setItem('hexara_player_id', id);
+  }
+  let username = localStorage.getItem('hexara_username');
+  if (!username || username === 'Ram') {
+    // Only assign a random pirate name once per device — persist it
+    username = PIRATE_NAMES[Math.floor(Math.random() * PIRATE_NAMES.length)];
+    localStorage.setItem('hexara_username', username);
+  }
+  return { id, username };
+}
+
 export default function HomePage() {
   // Modals state
   const [isProfileOpen, setProfileOpen] = useState(false);
@@ -85,38 +119,45 @@ export default function HomePage() {
   const [quickJoinCode, setQuickJoinCode] = useState('');
   const [quickJoinError, setQuickJoinError] = useState<string | null>(null);
 
-  // User Profile
+  // User Profile — always use a device-unique, persisted guest identity
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
     if (typeof window !== 'undefined') {
       const stored = localStorage.getItem('hexara_user_profile');
       if (stored) {
-        try { return JSON.parse(stored); } catch {}
+        try {
+          const parsed = JSON.parse(stored);
+          // Guard: if stored profile has the old hardcoded 'guest_ram' id,
+          // regenerate so the player gets a real unique id.
+          if (parsed.id && parsed.id !== 'guest_ram') {
+            return parsed;
+          }
+        } catch {}
       }
-      const savedName = localStorage.getItem('hexara_username') || 'Ram';
+      const { id, username } = getOrCreateGuestProfile();
       const savedAvatar = localStorage.getItem('hexara_avatar') || '🧙';
-      const savedId = localStorage.getItem('hexara_player_id') || 'guest_ram';
       return {
-        id: savedId,
-        username: savedName,
+        id,
+        username,
         avatar: savedAvatar,
         isGuest: true,
-        level: 3,
-        xp: 1450,
-        gamesPlayed: 8,
-        wins: 4,
-        totalVictoryPoints: 68,
+        level: 1,
+        xp: 0,
+        gamesPlayed: 0,
+        wins: 0,
+        totalVictoryPoints: 0,
       };
     }
+    // SSR fallback — will be overwritten on client mount
     return {
-      id: 'guest_ram',
-      username: 'Ram',
+      id: generateGuestId(),
+      username: 'Voyager',
       avatar: '🧙',
       isGuest: true,
-      level: 3,
-      xp: 1450,
-      gamesPlayed: 8,
-      wins: 4,
-      totalVictoryPoints: 68,
+      level: 1,
+      xp: 0,
+      gamesPlayed: 0,
+      wins: 0,
+      totalVictoryPoints: 0,
     };
   });
 

@@ -107,6 +107,21 @@ export function setupSocketServer(httpServer: HttpServer): {
         return;
       }
 
+      const preferredCode = parsed.data.code || parsed.data.roomCode;
+
+      // Guard: if the requested code already exists and is not owned by this player,
+      // this client should be joining, not creating. Reject to prevent ghost lobbies.
+      if (preferredCode) {
+        const existingLobby = lobbyManager.getLobby(preferredCode);
+        if (existingLobby && existingLobby.hostId !== userId) {
+          socket.emit(SERVER_EVENTS.ERROR, {
+            code: 'ROOM_ALREADY_EXISTS',
+            message: `Room ${preferredCode} already exists. Use JOIN to enter it.`,
+          });
+          return;
+        }
+      }
+
       const lobby = lobbyManager.createLobby(
         { playerId: userId, username },
         {
@@ -118,7 +133,7 @@ export function setupSocketServer(httpServer: HttpServer): {
           seed: parsed.data.seed,
           turnDurationSeconds: parsed.data.turnDurationSeconds,
         },
-        parsed.data.code || parsed.data.roomCode
+        preferredCode
       );
 
       currentGameCode = lobby.code;

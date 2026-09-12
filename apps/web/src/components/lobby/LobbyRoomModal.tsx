@@ -270,6 +270,16 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
     });
 
     socket.on(SERVER_EVENTS.ERROR, (err: ServerErrorPayload) => {
+      // If we tried to CREATE but the room already exists, auto-switch to JOIN
+      if ((err as any).code === 'ROOM_ALREADY_EXISTS') {
+        socket?.emit(CLIENT_EVENTS.JOIN_GAME, {
+          code: roomCode,
+          gameId: roomCode,
+          playerId: userProfile.id,
+          username: userProfile.username,
+        });
+        return; // Don't surface this error to the user — transparent recovery
+      }
       soundManager.playError();
       setErrorMsg(err.message || 'Room error');
       setIsStarting(false);
