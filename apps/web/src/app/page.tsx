@@ -71,6 +71,14 @@ export default function HomePage() {
   const [isLobbyModalOpen, setLobbyModalOpen] = useState(false);
   const [activeRoomCode, setActiveRoomCode] = useState('');
   const [isRoomHost, setIsRoomHost] = useState(false);
+  const [lobbyCreateOptions, setLobbyCreateOptions] = useState<{
+    scenarioId?: string;
+    scenarioName?: string;
+    targetVictoryPoints?: number;
+    maxPlayers?: number;
+    seed?: number;
+    turnDurationSeconds?: number;
+  }>({});
 
   // Quick room join input
   const [quickJoinCode, setQuickJoinCode] = useState('');
@@ -213,19 +221,11 @@ export default function HomePage() {
       sessionStorage.setItem('hexara_vp_target', String(options.victoryPoints));
       sessionStorage.setItem('hexara_board_seed', String(options.boardSeed));
 
-      // Emit create_game to server
-      const token = localStorage.getItem('hexara_auth_token') || sessionStorage.getItem('hexara_auth_token');
-      const socket = io(SERVER_URL, {
-        transports: ['websocket', 'polling'],
-        auth: { token, username: userProfile.username, playerId: userProfile.id },
-      });
-
-      socket.emit(CLIENT_EVENTS.CREATE_GAME, {
+      setLobbyCreateOptions({
         scenarioId: options.scenarioId,
         scenarioName: options.scenarioName,
         targetVictoryPoints: options.victoryPoints,
         maxPlayers: options.playerCount,
-        mode: 'online',
         seed: options.boardSeed,
         turnDurationSeconds: turnDuration,
       });
@@ -658,10 +658,17 @@ export default function HomePage() {
       />
       <LobbyRoomModal
         isOpen={isLobbyModalOpen}
-        onClose={() => setLobbyModalOpen(false)}
+        onClose={() => {
+          setLobbyModalOpen(false);
+          setActiveRoomCode('');
+        }}
         roomCode={activeRoomCode}
         isHost={isRoomHost}
         userProfile={userProfile}
+        createOptions={lobbyCreateOptions}
+        onRoomCodeAssigned={(code) => {
+          setActiveRoomCode(code);
+        }}
         onGameStarted={handleGameStartedFromLobby}
       />
       <AuthModal

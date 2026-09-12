@@ -14,6 +14,8 @@ export const resourceInventoryPartialSchema = z.object({
 
 // Lobby Schemas
 export const createGameSchema = z.object({
+  code: z.string().optional(),
+  roomCode: z.string().optional(),
   scenarioId: z.string().min(1).default('first_island'),
   scenarioName: z.string().optional(),
   seed: z.number().optional(),

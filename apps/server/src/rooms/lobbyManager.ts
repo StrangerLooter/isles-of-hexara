@@ -41,7 +41,8 @@ export class LobbyManager {
 
   createLobby(
     host: { playerId: string; username: string },
-    settings: ServerLobbySettings
+    settings: ServerLobbySettings,
+    preferredCode?: string
   ): Lobby {
     // If player is in existing lobby, leave first
     const existingCode = this.playerToLobbyCode.get(host.playerId);
@@ -49,7 +50,11 @@ export class LobbyManager {
       this.leaveLobby(existingCode, host.playerId);
     }
 
-    const code = generateUniqueRoomCode((c) => this.isCodeTaken(c));
+    const cleanPreferred = preferredCode?.trim().toUpperCase();
+    const code =
+      cleanPreferred && cleanPreferred.length >= 4 && !this.isCodeTaken(cleanPreferred)
+        ? cleanPreferred
+        : generateUniqueRoomCode((c) => this.isCodeTaken(c));
     const hostSeat: ServerLobbySeat = {
       playerId: host.playerId,
       username: host.username,

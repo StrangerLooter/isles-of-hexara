@@ -115,7 +115,9 @@ export function setupSocketServer(httpServer: HttpServer): {
           maxPlayers: parsed.data.maxPlayers,
           mode: parsed.data.mode,
           seed: parsed.data.seed,
-        }
+          turnDurationSeconds: parsed.data.turnDurationSeconds,
+        },
+        parsed.data.code || parsed.data.roomCode
       );
 
       currentGameCode = lobby.code;

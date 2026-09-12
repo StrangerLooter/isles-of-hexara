@@ -35,8 +35,16 @@ interface LobbyRoomModalProps {
   userProfile: { id: string; username: string; avatar: string };
   onGameStarted: (code: string) => void;
   socket?: Socket | null;
+  createOptions?: {
+    scenarioId?: string;
+    scenarioName?: string;
+    targetVictoryPoints?: number;
+    maxPlayers?: number;
+    seed?: number;
+    turnDurationSeconds?: number;
+  };
+  onRoomCodeAssigned?: (code: string) => void;
 }
-
 
 export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
   isOpen,
@@ -46,6 +54,8 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
   userProfile,
   onGameStarted,
   socket: externalSocket,
+  createOptions,
+  onRoomCodeAssigned,
 }) => {
   const [lobbyState, setLobbyState] = useState<ServerLobbyStatePayload | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -54,9 +64,11 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
   const [isStarting, setIsStarting] = useState(false);
   const [countdownNumber, setCountdownNumber] = useState<number | null>(null);
 
+  const displayRoomCode = lobbyState?.code || roomCode;
+
   // In-lobby chat
   const [chatMessages, setChatMessages] = useState<Array<{ sender: string; text: string; time: string }>>([
-    { sender: 'System', text: `Voyage room created. Share code ${roomCode} with crew members.`, time: 'Now' },
+    { sender: 'System', text: `Voyage room created. Share code ${displayRoomCode} with crew members.`, time: 'Now' },
   ]);
   const [chatInput, setChatInput] = useState('');
   const [showCustomTurnInput, setShowCustomTurnInput] = useState(false);
@@ -84,26 +96,51 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
     }
     socketRef.current = socket;
 
-    socket.on('connect', () => {
-      // If joining existing room or refreshing
-      socket?.emit(CLIENT_EVENTS.JOIN_GAME, {
-        code: roomCode,
-        playerId: userProfile.id,
-        username: userProfile.username,
-      });
-    });
+    const initializeRoom = () => {
+      if (isHost) {
+        socket?.emit(CLIENT_EVENTS.CREATE_GAME, {
+          code: roomCode,
+          roomCode: roomCode,
+          scenarioId: createOptions?.scenarioId || 'first_island',
+          scenarioName: createOptions?.scenarioName || 'First Island',
+          targetVictoryPoints: createOptions?.targetVictoryPoints || 10,
+          maxPlayers: createOptions?.maxPlayers || 4,
+          mode: 'online',
+          seed: createOptions?.seed,
+          turnDurationSeconds: createOptions?.turnDurationSeconds || 60,
+        });
+      } else {
+        socket?.emit(CLIENT_EVENTS.JOIN_GAME, {
+          code: roomCode,
+          gameId: roomCode,
+          playerId: userProfile.id,
+          username: userProfile.username,
+        });
+      }
+    };
+
+    if (socket.connected) {
+      initializeRoom();
+    } else {
+      socket.on('connect', initializeRoom);
+    }
 
     socket.on(SERVER_EVENTS.LOBBY_STATE, (state: ServerLobbyStatePayload) => {
       setLobbyState(state);
+      setErrorMsg(null);
+      if (state.code) {
+        sessionStorage.setItem('hexara_room_code', state.code);
+        onRoomCodeAssigned?.(state.code);
+      }
       if (state.status === 'playing') {
         soundManager.playTurnChime();
-        onGameStarted(roomCode);
+        onGameStarted(state.code || displayRoomCode);
       }
     });
 
     socket.on(SERVER_EVENTS.GAME_STATE, () => {
       soundManager.playTurnChime();
-      onGameStarted(roomCode);
+      onGameStarted(displayRoomCode);
     });
 
     socket.on(SERVER_EVENTS.PLAYER_JOINED, (payload: { playerId: string; username: string }) => {
@@ -141,8 +178,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
 
     socket.on(SERVER_EVENTS.ERROR, (err: ServerErrorPayload) => {
       soundManager.playError();
-      setErrorMsg(err.message);
-      setTimeout(() => setErrorMsg(null), 4000);
+      setErrorMsg(err.message || 'Room error');
       setIsStarting(false);
       setCountdownNumber(null);
     });
@@ -162,21 +198,25 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
       if (ownsSocket) {
         socket?.disconnect();
       }
+      setLobbyState(null);
+      setErrorMsg(null);
+      setIsStarting(false);
+      setCountdownNumber(null);
     };
-  }, [isOpen, roomCode, userProfile.id, userProfile.username]);
+  }, [isOpen, roomCode, isHost, userProfile.id, userProfile.username]);
 
   if (!isOpen) return null;
 
   const currentSocket = socketRef.current || externalSocket;
   const mySeat = lobbyState?.seats.find((s) => s.playerId === userProfile.id);
-  const amHost = isHost || lobbyState?.hostId === userProfile.id;
+  const amHost = lobbyState ? lobbyState.hostId === userProfile.id : isHost;
   const maxPlayers = lobbyState?.settings.maxPlayers || 4;
   const seats = lobbyState?.seats || [
     {
       playerId: userProfile.id,
       username: userProfile.username,
       color: '#e11d48',
-      ready: true,
+      ready: isHost,
       isAi: false,
       isConnected: true,
     },
@@ -184,7 +224,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
 
   const handleCopyCode = () => {
     soundManager.playClick();
-    navigator.clipboard.writeText(roomCode);
+    navigator.clipboard.writeText(displayRoomCode);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2000);
   };
@@ -192,7 +232,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
   const handleCopyLink = () => {
     soundManager.playClick();
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    const link = `${origin}/#/game?code=${roomCode}`;
+    const link = `${origin}/#/game?code=${displayRoomCode}`;
     navigator.clipboard.writeText(link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 2000);
@@ -203,7 +243,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
     if (!currentSocket) return;
     const nextReady = !(mySeat?.ready ?? false);
     currentSocket.emit(CLIENT_EVENTS.SET_READY, {
-      code: roomCode,
+      code: displayRoomCode,
       ready: nextReady,
     });
   };
@@ -212,7 +252,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
     soundManager.playClick();
     if (!currentSocket || !amHost) return;
     currentSocket.emit(CLIENT_EVENTS.KICK_SEAT, {
-      code: roomCode,
+      code: displayRoomCode,
       seatPlayerId: targetPlayerId,
     });
   };
@@ -223,7 +263,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
     setIsStarting(true);
     setErrorMsg(null);
     currentSocket.emit(CLIENT_EVENTS.START_GAME, {
-      code: roomCode,
+      code: displayRoomCode,
     });
   };
 
@@ -231,7 +271,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
     soundManager.playClick();
     if (currentSocket) {
       currentSocket.emit(CLIENT_EVENTS.LEAVE_GAME, {
-        code: roomCode,
+        code: displayRoomCode,
       });
     }
     onClose();
@@ -243,7 +283,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
     soundManager.playClick();
     currentSocket.emit(CLIENT_EVENTS.SEND_CHAT, {
       message: chatInput.trim(),
-      gameId: roomCode,
+      gameId: displayRoomCode,
     });
     setChatInput('');
   };
@@ -293,7 +333,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                 ROOM CODE
               </span>
               <span className="text-3xl sm:text-4xl font-black font-mono tracking-widest text-transparent bg-clip-text bg-gradient-to-b from-amber-200 via-amber-400 to-amber-600">
-                {roomCode}
+                {displayRoomCode}
               </span>
             </div>
           </div>
@@ -448,7 +488,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                                 disabled={isTaken}
                                 onClick={() => {
                                   soundManager.playClick();
-                                  currentSocket?.emit(CLIENT_EVENTS.SET_COLOR, { code: roomCode, color });
+                                  currentSocket?.emit(CLIENT_EVENTS.SET_COLOR, { code: displayRoomCode, color });
                                 }}
                                 style={{ backgroundColor: color }}
                                 title={isTaken ? 'Color taken by another player' : 'Select color'}
@@ -556,7 +596,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                         onClick={() => {
                           setShowCustomTurnInput(false);
                           currentSocket?.emit('client:update_lobby_settings', {
-                            code: roomCode,
+                            code: displayRoomCode,
                             settings: { turnDurationSeconds: sec },
                           });
                         }}
@@ -595,7 +635,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                         type="button"
                         onClick={() => {
                           currentSocket?.emit('client:update_lobby_settings', {
-                            code: roomCode,
+                            code: displayRoomCode,
                             settings: { turnDurationSeconds: customTurnVal },
                           });
                         }}
