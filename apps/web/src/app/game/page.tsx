@@ -154,8 +154,10 @@ export default function GamePage() {
 
       const socket = io(gameServerUrl, {
         transports: ['websocket', 'polling'],
-        timeout: 5000,
-        reconnectionAttempts: 5,
+        timeout: 10000,
+        reconnectionAttempts: Infinity,  // Never give up reconnecting (mobile-friendly)
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 10000,
         auth: {
           token,
           username,
@@ -163,6 +165,22 @@ export default function GamePage() {
         },
       });
       socketRef.current = socket;
+
+      socket.on('reconnect', () => {
+        setIsOnlineConnected(true);
+        setConnectionStatus('connected');
+        // Re-join the game room after reconnection
+        socket.emit(CLIENT_EVENTS.JOIN_GAME, {
+          code: roomCode,
+          gameId: roomCode,
+          playerId: myPlayerId,
+          username,
+        });
+      });
+
+      socket.on('reconnect_attempt', () => {
+        setConnectionStatus('reconnecting');
+      });
 
       socket.on('connect', () => {
         setIsOnlineConnected(true);
@@ -178,7 +196,8 @@ export default function GamePage() {
       socket.on(SERVER_EVENTS.GAME_STATE, (state: GameState) => {
         setGameState(state);
         sessionStorage.setItem('hexara_active_game_state', JSON.stringify(state));
-        if (state.phase === 'FINISHED' && state.winnerId === localPlayerId) {
+        // Use myPlayerId (locally captured) to avoid stale closure from React render cycle
+        if (state.phase === 'FINISHED' && state.winnerId === myPlayerId) {
           soundManager.playVictory();
           confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
         }
@@ -212,6 +231,34 @@ export default function GamePage() {
         soundManager.playError();
         setErrorToast(err.message);
         setTimeout(() => setErrorToast(null), 4000);
+      });
+
+      // Notify in chat when players join or leave
+      socket.on(SERVER_EVENTS.PLAYER_JOINED, (payload: { playerId: string; username: string }) => {
+        soundManager.playClick();
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: `join_${payload.playerId}_${Date.now()}`,
+            sender: 'System',
+            text: `⚓ ${payload.username} joined the voyage!`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            isSystem: true,
+          },
+        ]);
+      });
+
+      socket.on(SERVER_EVENTS.PLAYER_LEFT, (payload: { playerId: string; reason?: string }) => {
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            id: `leave_${payload.playerId}_${Date.now()}`,
+            sender: 'System',
+            text: `🚪 A voyager departed (${payload.reason || 'disconnected'}).`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            isSystem: true,
+          },
+        ]);
       });
 
       socket.on(SERVER_EVENTS.CHAT_MESSAGE, (payload: { playerId: string; username: string; message: string; timestamp: number }) => {
