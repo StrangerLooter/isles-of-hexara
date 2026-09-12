@@ -148,14 +148,14 @@ export const AlmanacModal: React.FC<AlmanacModalProps> = ({ isOpen, onClose }) =
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200 select-none">
+    <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200 select-none">
       <div className="relative w-full max-w-4xl bg-gradient-to-b from-[#2e0e0e] via-[#1c0a0a] to-[#100505] border-2 border-[#d97706]/70 rounded-2xl shadow-[0_0_60px_rgba(217,119,6,0.3)] overflow-hidden flex flex-col h-[650px] max-h-[92vh]">
         {/* Header with Title & Search Bar */}
         <div className="flex flex-col sm:flex-row items-center justify-between px-6 py-4 border-b border-[#d97706]/40 bg-[#3a1414]/70 gap-4">
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <button
               onClick={onClose}
-              className="px-3 py-1.5 rounded-lg bg-[#d97706]/20 hover:bg-[#d97706]/40 border border-[#d97706]/50 text-[#fbbf24] font-bold text-xs flex items-center gap-1.5 uppercase transition-colors"
+              className="px-3 py-1.5 rounded-lg bg-[#d97706]/20 hover:bg-[#d97706]/40 border border-[#d97706]/50 text-[#fbbf24] font-bold text-xs flex items-center gap-1.5 uppercase transition-colors cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
               <span>Back</span>
@@ -166,16 +166,25 @@ export const AlmanacModal: React.FC<AlmanacModalProps> = ({ isOpen, onClose }) =
             </h2>
           </div>
 
-          {/* Search Input Box */}
-          <div className="relative w-full sm:w-72">
-            <Search className="w-4 h-4 text-amber-400/80 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search rules, harbor, robber..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-black/60 border border-amber-600/50 text-amber-100 placeholder-amber-400/40 text-xs focus:outline-none focus:border-amber-400"
-            />
+          {/* Search Input Box & Close Button */}
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative w-full sm:w-72">
+              <Search className="w-4 h-4 text-amber-400/80 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Search rules, harbor, robber..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-black/60 border border-amber-600/50 text-amber-100 placeholder-amber-400/40 text-xs focus:outline-none focus:border-amber-400"
+              />
+            </div>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg bg-[#d97706]/20 hover:bg-[#d97706]/40 border border-[#d97706]/50 text-[#fbbf24] font-bold flex items-center justify-center transition-colors text-xs cursor-pointer shrink-0"
+              title="Close Almanac"
+            >
+              ✕
+            </button>
           </div>
         </div>
 

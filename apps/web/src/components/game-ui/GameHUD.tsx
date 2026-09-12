@@ -34,6 +34,7 @@ import {
   MoreHorizontal,
   X,
   LogOut,
+  ChevronLeft,
 } from 'lucide-react';
 import { createInitialGameState, ResourceType } from '@hexara/game-core';
 import { useGameStore } from '../../store/gameStore';
@@ -203,32 +204,29 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     }
   }, [gameState?.currentPlayerIndex, gameState?.phase, localPlayerId]);
 
-  // Record dice roll when dice total changes
   useEffect(() => {
     if (gameState?.dice?.rolled && gameState.dice.total > 0) {
       setDiceHistory((prev) => [...prev, gameState.dice.total]);
     }
   }, [gameState?.dice?.total, gameState?.dice?.rolled]);
-
-  if (!gameState) return null;
-
-  const activePlayerId = gameState.playerOrder[gameState.currentPlayerIndex];
+  const activePlayerId = gameState?.playerOrder?.[gameState?.currentPlayerIndex ?? 0] || '';
   const isMyTurn = activePlayerId === localPlayerId;
-  const localPlayer = gameState.players[localPlayerId];
+  const localPlayer = gameState?.players?.[localPlayerId];
 
-  const canRoll = isMyTurn && gameState.phase === 'ROLLING' && !gameState.dice.rolled;
-  const canBuild = isMyTurn && (gameState.phase === 'MAIN' || gameState.phase.startsWith('SETUP'));
-  const canTrade = isMyTurn && gameState.phase === 'MAIN';
-  const canEndTurn =
+  const canRoll = Boolean(isMyTurn && gameState?.phase === 'ROLLING' && !gameState?.dice?.rolled);
+  const canBuild = Boolean(isMyTurn && (gameState?.phase === 'MAIN' || gameState?.phase?.startsWith('SETUP')));
+  const canTrade = Boolean(isMyTurn && gameState?.phase === 'MAIN');
+  const canEndTurn = Boolean(
     isMyTurn &&
-    ((gameState.phase.startsWith('SETUP')) ||
-      (gameState.phase === 'MAIN' && gameState.dice.rolled));
+    ((gameState?.phase?.startsWith('SETUP')) ||
+      (gameState?.phase === 'MAIN' && gameState?.dice?.rolled))
+  );
 
   // Robber phase state helpers
-  const myPendingDiscard = gameState.pendingDiscards?.[localPlayerId] ?? 0;
-  const isRobberDiscard = gameState.phase === 'ROBBER_DISCARD' && myPendingDiscard > 0;
-  const isRobberMove = gameState.phase === 'ROBBER_MOVE' && isMyTurn;
-  const isRobberSteal = gameState.phase === 'ROBBER_STEAL' && isMyTurn;
+  const myPendingDiscard = gameState?.pendingDiscards?.[localPlayerId] ?? 0;
+  const isRobberDiscard = gameState?.phase === 'ROBBER_DISCARD' && myPendingDiscard > 0;
+  const isRobberMove = gameState?.phase === 'ROBBER_MOVE' && isMyTurn;
+  const isRobberSteal = gameState?.phase === 'ROBBER_STEAL' && isMyTurn;
 
   // Phase instruction text
   const getPhaseInstruction = (): string | null => {
@@ -347,6 +345,8 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     { color: '#059669', avatar: '👑' }, // Green (William)
   ];
 
+  if (!gameState) return null;
+
   return (
     <div className="pointer-events-none fixed inset-0 z-30 flex flex-col justify-between p-2 sm:p-3 select-none overflow-hidden font-sans">
       {/* ============================================================ */}
@@ -359,8 +359,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       <header className="pointer-events-none flex flex-col w-full px-2 sm:px-4 pt-2 gap-1.5 z-30 shrink-0">
         {/* Main Top Bar Row */}
         <div className="flex items-center justify-between w-full gap-2">
-          {/* Left: Brand / Room Code Badge */}
+          {/* Left: Brand, Harbor Back Button & Room Code Badge */}
           <div className="pointer-events-auto flex items-center gap-2">
+            <button
+              onClick={handleLeaveMatch}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/75 hover:bg-red-950/80 border border-amber-600/50 hover:border-red-500/80 text-amber-200 hover:text-red-200 text-xs font-bold transition-all shadow-md cursor-pointer active:scale-95 shrink-0"
+              title="Return to Harbor / Main Menu"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span className="font-serif">Harbor</span>
+            </button>
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-[#2e1208]/95 to-[#160803]/95 border border-amber-600/50 shadow-lg backdrop-blur-md">
               <span className="text-base">🏔️</span>
               <span className="hidden sm:inline text-xs font-black uppercase font-serif tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-amber-400 to-amber-200">
@@ -369,7 +377,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               {roomCode && (
                 <button
                   onClick={handleCopyRoom}
-                  className="flex items-center gap-1 ml-1 px-2 py-0.5 rounded-lg bg-black/60 hover:bg-black/90 border border-amber-600/40 text-amber-300 font-mono text-[11px] font-bold transition-all active:scale-95"
+                  className="flex items-center gap-1 ml-1 px-2 py-0.5 rounded-lg bg-black/60 hover:bg-black/90 border border-amber-600/40 text-amber-300 font-mono text-[11px] font-bold transition-all active:scale-95 cursor-pointer"
                   title="Click to copy room code"
                 >
                   <span>#{roomCode}</span>
@@ -420,7 +428,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             })}
           </div>
 
-          {/* Right: Authoritative Turn Timer, Voice, Camera & Settings controls */}
+          {/* Right: Authoritative Turn Timer, Voice, Camera, Chat, Almanac & Settings controls */}
           <div className="pointer-events-auto flex items-center gap-1.5">
             {/* Authoritative Server Turn Timer Countdown */}
             <TurnTimer
@@ -449,33 +457,57 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             <div className="hidden sm:flex items-center gap-0.5 bg-black/60 p-0.5 rounded-xl border border-amber-600/40">
               <button
                 onClick={() => zoomInCamera()}
-                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95"
+                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95 cursor-pointer"
                 title="Zoom In"
               >
                 <Plus className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => zoomOutCamera()}
-                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95"
+                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95 cursor-pointer"
                 title="Zoom Out"
               >
                 <Minus className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => resetGameCamera()}
-                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95"
+                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95 cursor-pointer"
                 title="Recenter Camera"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={toggleCameraMode}
-                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95"
+                className="w-7 h-7 rounded-lg hover:bg-black/60 text-amber-300 flex items-center justify-center transition-all active:scale-95 cursor-pointer"
                 title="Toggle 3D / Tactical View"
               >
                 <Eye className="w-3.5 h-3.5" />
               </button>
             </div>
+
+            {/* Crew Chat Button */}
+            <button
+              onClick={() => {
+                soundManager.playClick();
+                setChatLogOpen(true);
+              }}
+              title="Crew Chat & Game Logs"
+              className="w-8 h-8 rounded-xl bg-black/60 hover:bg-black/80 border border-amber-600/40 text-amber-300 hover:text-white flex items-center justify-center transition-all shadow active:scale-95 cursor-pointer"
+            >
+              <MessageSquare className="w-4 h-4" />
+            </button>
+
+            {/* Rulebook / Almanac Button */}
+            <button
+              onClick={() => {
+                soundManager.playClick();
+                setAlmanacOpen(true);
+              }}
+              title="Catan Rulebook & Maritime Almanac"
+              className="w-8 h-8 rounded-xl bg-black/60 hover:bg-black/80 border border-amber-600/40 text-amber-300 hover:text-white flex items-center justify-center transition-all shadow active:scale-95 cursor-pointer"
+            >
+              <BookOpen className="w-4 h-4" />
+            </button>
 
             {/* Settings button */}
             <button
@@ -484,7 +516,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 setSettingsOpen(true);
               }}
               title="Audio & Match Settings"
-              className="w-8 h-8 rounded-xl bg-black/60 hover:bg-black/80 border border-amber-600/40 text-amber-300 hover:text-white flex items-center justify-center transition-all shadow active:scale-95"
+              className="w-8 h-8 rounded-xl bg-black/60 hover:bg-black/80 border border-amber-600/40 text-amber-300 hover:text-white flex items-center justify-center transition-all shadow active:scale-95 cursor-pointer"
             >
               <SettingsIcon className="w-4 h-4" />
             </button>
@@ -969,68 +1001,71 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         onLeaveMatch={handleLeaveMatch}
       />
 
-      {/* Scoreboard / Statistics Modal */}
-      <ScoreboardModal
-        isOpen={isScoreboardOpen}
-        onClose={() => setScoreboardOpen(false)}
-        gameState={gameState}
-        diceRollHistory={diceHistory}
-      />
+      {/* Modal Dialogs & Panels */}
+      <div className="pointer-events-auto">
+        {/* Scoreboard / Statistics Modal */}
+        <ScoreboardModal
+          isOpen={isScoreboardOpen}
+          onClose={() => setScoreboardOpen(false)}
+          gameState={gameState}
+          diceRollHistory={diceHistory}
+        />
 
-      {/* Emoji Reactions */}
-      <EmojiModal
-        isOpen={isEmojiOpen}
-        onClose={() => setEmojiOpen(false)}
-        onSelectEmoji={handleSelectEmoji}
-      />
+        {/* Emoji Reactions */}
+        <EmojiModal
+          isOpen={isEmojiOpen}
+          onClose={() => setEmojiOpen(false)}
+          onSelectEmoji={handleSelectEmoji}
+        />
 
-      {/* Full Chat Log Modal */}
-      <ChatLogModal
-        isOpen={isChatLogOpen}
-        onClose={() => setChatLogOpen(false)}
-        logs={gameState.logs || []}
-        chatMessages={activeChatList}
-        onSendMessage={handleSendMessage}
-      />
+        {/* Full Chat Log Modal */}
+        <ChatLogModal
+          isOpen={isChatLogOpen}
+          onClose={() => setChatLogOpen(false)}
+          logs={gameState.logs || []}
+          chatMessages={activeChatList}
+          onSendMessage={handleSendMessage}
+        />
 
-      {/* Maritime Almanac & Game Rules */}
-      <AlmanacModal
-        isOpen={isAlmanacOpen}
-        onClose={() => setAlmanacOpen(false)}
-      />
+        {/* Maritime Almanac & Game Rules */}
+        <AlmanacModal
+          isOpen={isAlmanacOpen}
+          onClose={() => setAlmanacOpen(false)}
+        />
 
-      {/* Tavern Settings Modal */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        settings={settings}
-        onUpdateSettings={setSettings}
-      />
+        {/* Tavern Settings Modal */}
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          settings={settings}
+          onUpdateSettings={setSettings}
+        />
 
-      {/* Profile & Avatar Modal */}
-      <ProfileModal
-        isOpen={isProfileOpen}
-        onClose={() => setProfileOpen(false)}
-        userProfile={userProfile}
-        onProfileUpdated={(updated) => setUserProfile(updated)}
-      />
+        {/* Profile & Avatar Modal */}
+        <ProfileModal
+          isOpen={isProfileOpen}
+          onClose={() => setProfileOpen(false)}
+          userProfile={userProfile}
+          onProfileUpdated={(updated) => setUserProfile(updated)}
+        />
 
-      {/* Development Cards Panel */}
-      <DevCardPanel
-        isOpen={isDevCardPanelOpen}
-        onClose={() => setDevCardPanelOpen(false)}
-        devCards={localPlayer?.devCards || []}
-        canPlay={isMyTurn && gameState.phase === 'MAIN'}
-        onPlay={(card, params) => {
-          onPlayDevCard?.(card, params);
-        }}
-      />
+        {/* Development Cards Panel */}
+        <DevCardPanel
+          isOpen={isDevCardPanelOpen}
+          onClose={() => setDevCardPanelOpen(false)}
+          devCards={localPlayer?.devCards || []}
+          canPlay={isMyTurn && gameState.phase === 'MAIN'}
+          onPlay={(card, params) => {
+            onPlayDevCard?.(card, params);
+          }}
+        />
 
-      {/* Floating Animated Resource Gains */}
-      <ResourceFlyAnimation
-        resources={localPlayer?.resources}
-        devCardCount={localPlayer?.devCards?.length || 0}
-      />
+        {/* Floating Animated Resource Gains */}
+        <ResourceFlyAnimation
+          resources={localPlayer?.resources}
+          devCardCount={localPlayer?.devCards?.length || 0}
+        />
+      </div>
     </div>
   );
 };

@@ -15,6 +15,7 @@ import {
 } from '@hexara/game-core';
 import { ResourceType } from '@hexara/shared';
 import confetti from 'canvas-confetti';
+import { Compass } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { ToastNotification } from '../../components/common/ToastNotification';
 import { BuildModal } from '../../components/game-ui/BuildModal';
@@ -841,6 +842,37 @@ export default function GamePage() {
     gameState?.phase === 'ROBBER_STEAL' &&
     gameState?.playerOrder[gameState.currentPlayerIndex] === localPlayerId &&
     (gameState?.robberEligibleVictimIds?.length ?? 0) > 0;
+
+  if (!gameState) {
+    return (
+      <main className="relative w-screen h-screen overflow-hidden bg-[#0d0705] flex flex-col items-center justify-center select-none">
+        <div
+          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-30 pointer-events-none"
+          style={{ backgroundImage: "url('/lobby-bg.jpg')" }}
+        />
+        <div className="relative z-10 flex flex-col items-center gap-4 text-center px-6">
+          <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-400/60 flex items-center justify-center text-amber-300 shadow-[0_0_40px_rgba(245,158,11,0.3)]">
+            <Compass className="w-9 h-9 animate-spin-slow" />
+          </div>
+          <h2 className="text-xl sm:text-2xl font-black uppercase font-serif tracking-widest text-amber-100 drop-shadow">
+            Embarking to Hexara...
+          </h2>
+          <p className="text-xs text-amber-300/80 font-mono">
+            {isOnlineConnected ? 'Synchronizing realm board state...' : 'Charting the island archipelago...'}
+          </p>
+          <button
+            onClick={() => {
+              soundManager.playClick();
+              window.location.hash = '#/';
+            }}
+            className="mt-4 px-5 py-2.5 rounded-xl bg-[#24130b] hover:bg-[#381a10] border border-amber-600/50 text-amber-200 hover:text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg active:scale-95 cursor-pointer"
+          >
+            ← Return to Harbor
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="relative w-screen h-screen overflow-hidden bg-[#0d0705]">

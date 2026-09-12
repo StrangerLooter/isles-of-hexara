@@ -40,7 +40,7 @@ export const ChatLogModal: React.FC<ChatLogModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
+    <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
       <div className="relative w-full max-w-2xl bg-gradient-to-b from-[#2a1010] via-[#1a0c0c] to-[#120808] border-2 border-[#d97706]/70 rounded-2xl shadow-[0_0_50px_rgba(217,119,6,0.25)] overflow-hidden flex flex-col h-[520px]">
         {/* Header with Tabs & Back Button */}
         <div className="flex items-center justify-between px-6 py-3.5 border-b border-[#d97706]/40 bg-[#3a1414]/70">

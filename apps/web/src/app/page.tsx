@@ -78,6 +78,7 @@ export default function HomePage() {
     maxPlayers?: number;
     seed?: number;
     turnDurationSeconds?: number;
+    mode?: 'solo' | 'online';
   }>({});
 
   // Quick room join input
@@ -168,15 +169,29 @@ export default function HomePage() {
 
   const handleStartSolo = () => {
     soundManager.playClick();
+    setActiveRoomCode('SOLO');
+    setIsRoomHost(true);
     sessionStorage.setItem('hexara_match_mode', 'solo');
     sessionStorage.setItem('hexara_scenario_id', 'first_island');
     sessionStorage.setItem('hexara_scenario_name', 'The First Island');
     sessionStorage.setItem('hexara_player_count', '4');
     sessionStorage.setItem('hexara_vp_target', '10');
     sessionStorage.setItem('hexara_board_seed', String(Math.floor(100000 + Math.random() * 900000)));
+    sessionStorage.setItem('hexara_turn_duration', '60');
     sessionStorage.removeItem('hexara_active_game_state');
     sessionStorage.removeItem('hexara_room_code');
-    window.location.hash = '#/game';
+
+    setLobbyCreateOptions({
+      scenarioId: 'first_island',
+      scenarioName: 'The First Island',
+      targetVictoryPoints: 10,
+      maxPlayers: 4,
+      seed: Math.floor(100000 + Math.random() * 900000),
+      turnDurationSeconds: 60,
+      mode: 'solo',
+    });
+
+    setLobbyModalOpen(true);
   };
 
   const handleOpenCreateOnline = () => {
@@ -199,6 +214,8 @@ export default function HomePage() {
     sessionStorage.setItem('hexara_turn_duration', String(turnDuration));
 
     if (options.mode === 'solo') {
+      setActiveRoomCode('SOLO');
+      setIsRoomHost(true);
       sessionStorage.setItem('hexara_match_mode', 'solo');
       sessionStorage.setItem('hexara_scenario_id', options.scenarioId);
       sessionStorage.setItem('hexara_scenario_name', options.scenarioName);
@@ -207,7 +224,18 @@ export default function HomePage() {
       sessionStorage.setItem('hexara_board_seed', String(options.boardSeed));
       sessionStorage.removeItem('hexara_active_game_state');
       sessionStorage.removeItem('hexara_room_code');
-      window.location.hash = '#/game';
+
+      setLobbyCreateOptions({
+        scenarioId: options.scenarioId,
+        scenarioName: options.scenarioName,
+        targetVictoryPoints: options.victoryPoints,
+        maxPlayers: options.playerCount,
+        seed: options.boardSeed,
+        turnDurationSeconds: turnDuration,
+        mode: 'solo',
+      });
+
+      setLobbyModalOpen(true);
     } else {
       // Create Online Room Code and Open Lobby
       const code = options.roomCode || generateRoomCode();
@@ -228,6 +256,7 @@ export default function HomePage() {
         maxPlayers: options.playerCount,
         seed: options.boardSeed,
         turnDurationSeconds: turnDuration,
+        mode: 'online',
       });
 
       setLobbyModalOpen(true);
@@ -254,8 +283,13 @@ export default function HomePage() {
 
   const handleGameStartedFromLobby = (code: string) => {
     setLobbyModalOpen(false);
-    sessionStorage.setItem('hexara_match_mode', 'online');
-    sessionStorage.setItem('hexara_room_code', code);
+    const isSolo = lobbyCreateOptions?.mode === 'solo' || code === 'SOLO';
+    sessionStorage.setItem('hexara_match_mode', isSolo ? 'solo' : 'online');
+    if (!isSolo) {
+      sessionStorage.setItem('hexara_room_code', code);
+    } else {
+      sessionStorage.removeItem('hexara_room_code');
+    }
     window.location.hash = '#/game';
   };
 

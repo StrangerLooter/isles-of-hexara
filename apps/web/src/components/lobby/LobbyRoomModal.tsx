@@ -15,6 +15,8 @@ import {
   MessageSquare,
   Send,
   Compass,
+  ChevronLeft,
+  X,
 } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import {
@@ -42,6 +44,7 @@ interface LobbyRoomModalProps {
     maxPlayers?: number;
     seed?: number;
     turnDurationSeconds?: number;
+    mode?: 'solo' | 'online';
   };
   onRoomCodeAssigned?: (code: string) => void;
 }
@@ -57,6 +60,8 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
   createOptions,
   onRoomCodeAssigned,
 }) => {
+  const isSolo = createOptions?.mode === 'solo' || roomCode === 'SOLO';
+
   const [lobbyState, setLobbyState] = useState<ServerLobbyStatePayload | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -64,11 +69,49 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
   const [isStarting, setIsStarting] = useState(false);
   const [countdownNumber, setCountdownNumber] = useState<number | null>(null);
 
-  const displayRoomCode = lobbyState?.code || roomCode;
+  // Solo mode local state
+  const [soloSeats, setSoloSeats] = useState<ServerLobbySeat[]>([
+    {
+      playerId: userProfile.id,
+      username: userProfile.username,
+      color: '#e11d48',
+      ready: true,
+      isAi: false,
+      isConnected: true,
+    },
+    {
+      playerId: 'ai_1',
+      username: 'Candamir (Bot)',
+      color: '#ef4444',
+      ready: true,
+      isAi: true,
+      isConnected: true,
+    },
+    {
+      playerId: 'ai_2',
+      username: 'Louis (Bot)',
+      color: '#3b82f6',
+      ready: true,
+      isAi: true,
+      isConnected: true,
+    },
+    {
+      playerId: 'ai_3',
+      username: 'William (Bot)',
+      color: '#10b981',
+      ready: true,
+      isAi: true,
+      isConnected: true,
+    },
+  ]);
+  const [soloTurnDuration, setSoloTurnDuration] = useState<number>(createOptions?.turnDurationSeconds || 60);
+  const [soloTargetVp, setSoloTargetVp] = useState<number>(createOptions?.targetVictoryPoints || 10);
+
+  const displayRoomCode = isSolo ? 'SOLO' : (lobbyState?.code || roomCode);
 
   // In-lobby chat
   const [chatMessages, setChatMessages] = useState<Array<{ sender: string; text: string; time: string }>>([
-    { sender: 'System', text: `Voyage room created. Share code ${displayRoomCode} with crew members.`, time: 'Now' },
+    { sender: 'System', text: `Voyage room created. Welcome aboard, Captain!`, time: 'Now' },
   ]);
   const [chatInput, setChatInput] = useState('');
   const [showCustomTurnInput, setShowCustomTurnInput] = useState(false);
@@ -76,8 +119,58 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
 
   const socketRef = useRef<Socket | null>(null);
 
+  // Reset and initialize solo state when opened
   useEffect(() => {
-    if (!isOpen || !roomCode) return;
+    if (isOpen && isSolo) {
+      const maxP = createOptions?.maxPlayers || 4;
+      const initial: ServerLobbySeat[] = [
+        {
+          playerId: userProfile.id,
+          username: userProfile.username,
+          color: '#e11d48',
+          ready: true,
+          isAi: false,
+          isConnected: true,
+        },
+        {
+          playerId: 'ai_1',
+          username: 'Candamir (Bot)',
+          color: '#ef4444',
+          ready: true,
+          isAi: true,
+          isConnected: true,
+        },
+        {
+          playerId: 'ai_2',
+          username: 'Louis (Bot)',
+          color: '#3b82f6',
+          ready: true,
+          isAi: true,
+          isConnected: true,
+        },
+      ];
+      if (maxP >= 4) {
+        initial.push({
+          playerId: 'ai_3',
+          username: 'William (Bot)',
+          color: '#10b981',
+          ready: true,
+          isAi: true,
+          isConnected: true,
+        });
+      }
+      setSoloSeats(initial);
+      setSoloTurnDuration(createOptions?.turnDurationSeconds || 60);
+      setSoloTargetVp(createOptions?.targetVictoryPoints || 10);
+      setChatMessages([
+        { sender: 'System', text: 'Solo Expedition lobby created. Prepare your strategy vs the bot crew!', time: 'Now' },
+      ]);
+    }
+  }, [isOpen, isSolo, createOptions?.maxPlayers, createOptions?.turnDurationSeconds, createOptions?.targetVictoryPoints, userProfile.id, userProfile.username]);
+
+  // Online socket connection
+  useEffect(() => {
+    if (!isOpen || !roomCode || isSolo) return;
 
     let socket = externalSocket;
     let ownsSocket = false;
@@ -203,15 +296,14 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
       setIsStarting(false);
       setCountdownNumber(null);
     };
-  }, [isOpen, roomCode, isHost, userProfile.id, userProfile.username]);
+  }, [isOpen, roomCode, isHost, isSolo, userProfile.id, userProfile.username]);
 
   if (!isOpen) return null;
 
   const currentSocket = socketRef.current || externalSocket;
-  const mySeat = lobbyState?.seats.find((s) => s.playerId === userProfile.id);
-  const amHost = lobbyState ? lobbyState.hostId === userProfile.id : isHost;
-  const maxPlayers = lobbyState?.settings.maxPlayers || 4;
-  const seats = lobbyState?.seats || [
+  const amHost = isSolo ? true : (lobbyState ? lobbyState.hostId === userProfile.id : isHost);
+  const maxPlayers = isSolo ? (createOptions?.maxPlayers || 4) : (lobbyState?.settings.maxPlayers || 4);
+  const seats = isSolo ? soloSeats : (lobbyState?.seats || [
     {
       playerId: userProfile.id,
       username: userProfile.username,
@@ -220,7 +312,11 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
       isAi: false,
       isConnected: true,
     },
-  ];
+  ]);
+  const mySeat = seats.find((s) => s.playerId === userProfile.id);
+  const activeTurnDuration = isSolo ? soloTurnDuration : (lobbyState?.settings.turnDurationSeconds || 60);
+  const activeTargetVp = isSolo ? soloTargetVp : (lobbyState?.settings.targetVictoryPoints || 10);
+  const activeScenarioName = createOptions?.scenarioName || lobbyState?.settings.scenarioName || 'The First Island';
 
   const handleCopyCode = () => {
     soundManager.playClick();
@@ -240,6 +336,12 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
 
   const handleToggleReady = () => {
     soundManager.playClick();
+    if (isSolo) {
+      setSoloSeats((prev) =>
+        prev.map((s) => (s.playerId === userProfile.id ? { ...s, ready: !s.ready } : s))
+      );
+      return;
+    }
     if (!currentSocket) return;
     const nextReady = !(mySeat?.ready ?? false);
     currentSocket.emit(CLIENT_EVENTS.SET_READY, {
@@ -250,6 +352,10 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
 
   const handleKickPlayer = (targetPlayerId: string) => {
     soundManager.playClick();
+    if (isSolo) {
+      setSoloSeats((prev) => prev.filter((s) => s.playerId !== targetPlayerId));
+      return;
+    }
     if (!currentSocket || !amHost) return;
     currentSocket.emit(CLIENT_EVENTS.KICK_SEAT, {
       code: displayRoomCode,
@@ -257,8 +363,95 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
     });
   };
 
+  const handleAddAi = () => {
+    soundManager.playClick();
+    if (isSolo) {
+      if (soloSeats.length < maxPlayers) {
+        const extraBots = [
+          { id: 'ai_extra_1', name: 'Captain Drake (Bot)', color: '#f59e0b' },
+          { id: 'ai_extra_2', name: 'Lady Eleanor (Bot)', color: '#8b5cf6' },
+        ];
+        const next = extraBots[soloSeats.length % extraBots.length];
+        setSoloSeats((prev) => [
+          ...prev,
+          {
+            playerId: `${next.id}_${Date.now()}`,
+            username: next.name,
+            color: next.color,
+            ready: true,
+            isAi: true,
+            isConnected: true,
+          },
+        ]);
+      }
+      return;
+    }
+    currentSocket?.emit(CLIENT_EVENTS.ADD_AI, { code: roomCode });
+  };
+
+  const handleSetColor = (color: string) => {
+    soundManager.playClick();
+    if (isSolo) {
+      setSoloSeats((prev) =>
+        prev.map((s) => (s.playerId === userProfile.id ? { ...s, color } : s))
+      );
+      return;
+    }
+    currentSocket?.emit(CLIENT_EVENTS.SET_COLOR, { code: displayRoomCode, color });
+  };
+
+  const handleUpdateTurnDuration = (sec: number) => {
+    soundManager.playClick();
+    if (isSolo) {
+      setSoloTurnDuration(sec);
+      sessionStorage.setItem('hexara_turn_duration', String(sec));
+    } else {
+      currentSocket?.emit('client:update_lobby_settings', {
+        code: displayRoomCode,
+        settings: { turnDurationSeconds: sec },
+      });
+    }
+  };
+
+  const handleUpdateTargetVp = (vp: number) => {
+    soundManager.playClick();
+    if (isSolo) {
+      setSoloTargetVp(vp);
+      sessionStorage.setItem('hexara_vp_target', String(vp));
+    } else {
+      currentSocket?.emit('client:update_lobby_settings', {
+        code: displayRoomCode,
+        settings: { targetVictoryPoints: vp },
+      });
+    }
+  };
+
+  const handleApplyCustomTurn = () => {
+    const val = Math.max(10, Math.min(600, customTurnVal));
+    soundManager.playClick();
+    handleUpdateTurnDuration(val);
+    setShowCustomTurnInput(false);
+  };
+
   const handleStartGame = () => {
     soundManager.playClick();
+    if (isSolo) {
+      setIsStarting(true);
+      sessionStorage.setItem('hexara_match_mode', 'solo');
+      sessionStorage.setItem('hexara_player_count', String(soloSeats.length));
+      sessionStorage.setItem('hexara_turn_duration', String(soloTurnDuration));
+      sessionStorage.setItem('hexara_vp_target', String(soloTargetVp));
+      sessionStorage.setItem('hexara_scenario_name', createOptions?.scenarioName || 'The First Island');
+      sessionStorage.setItem('hexara_scenario_id', createOptions?.scenarioId || 'first_island');
+      sessionStorage.setItem('hexara_board_seed', String(createOptions?.seed || Math.floor(100000 + Math.random() * 900000)));
+      sessionStorage.removeItem('hexara_active_game_state');
+      sessionStorage.removeItem('hexara_room_code');
+
+      soundManager.playTurnChime();
+      onGameStarted('SOLO');
+      return;
+    }
+
     if (!currentSocket || !amHost) return;
     setIsStarting(true);
     setErrorMsg(null);
@@ -269,7 +462,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
 
   const handleLeave = () => {
     soundManager.playClick();
-    if (currentSocket) {
+    if (!isSolo && currentSocket) {
       currentSocket.emit(CLIENT_EVENTS.LEAVE_GAME, {
         code: displayRoomCode,
       });
@@ -279,13 +472,39 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
 
   const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !currentSocket) return;
+    if (!chatInput.trim()) return;
     soundManager.playClick();
-    currentSocket.emit(CLIENT_EVENTS.SEND_CHAT, {
-      message: chatInput.trim(),
-      gameId: displayRoomCode,
-    });
-    setChatInput('');
+    const text = chatInput.trim();
+    const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    if (isSolo) {
+      setChatMessages((prev) => [...prev, { sender: userProfile.username, text, time: nowStr }]);
+      setChatInput('');
+      setTimeout(() => {
+        const aiReplies = [
+          'Ready to set sail, Captain!',
+          'May the dice roll favorably on Hexara.',
+          'Keep your sights set on the longest road!',
+          'Harbor trade will decide our fates.',
+        ];
+        const botReply = aiReplies[Math.floor(Math.random() * aiReplies.length)];
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            sender: 'Candamir (Bot)',
+            text: botReply,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          },
+        ]);
+      }, 500);
+    } else {
+      if (!currentSocket) return;
+      currentSocket.emit(CLIENT_EVENTS.SEND_CHAT, {
+        message: text,
+        gameId: displayRoomCode,
+      });
+      setChatInput('');
+    }
   };
 
   // Check if match can be started (at least 2 players, and all human players ready)
@@ -298,6 +517,14 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
         {/* Header Bar */}
         <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-amber-950 via-[#3a1c0e] to-amber-950 border-b border-amber-500/40">
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleLeave}
+              className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/50 text-amber-200 hover:text-white font-bold text-xs flex items-center gap-1.5 uppercase transition-colors cursor-pointer"
+              title="Return to Port"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              <span>Back</span>
+            </button>
             <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/60 flex items-center justify-center text-amber-300">
               <Compass className="w-6 h-6 animate-spin-slow" />
             </div>
@@ -306,22 +533,28 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                 <h2 className="text-base sm:text-lg font-black uppercase tracking-wider text-amber-100 font-serif">
                   Archipelago Voyage Lobby
                 </h2>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/50 text-[10px] font-mono font-bold text-emerald-300">
-                  ONLINE
+                <span
+                  className={`px-2 py-0.5 rounded-full border text-[10px] font-mono font-bold ${
+                    isSolo
+                      ? 'bg-amber-950/80 border-amber-500/60 text-amber-300'
+                      : 'bg-emerald-950 border border-emerald-500/50 text-emerald-300'
+                  }`}
+                >
+                  {isSolo ? 'SOLO EXPEDITION' : 'ONLINE'}
                 </span>
               </div>
               <p className="text-[11px] text-amber-300/70 font-medium">
-                Assemble your crew before setting sail
+                {isSolo ? 'Prepare your bot crew and configure match targets' : 'Assemble your crew before setting sail'}
               </p>
             </div>
           </div>
 
           <button
             onClick={handleLeave}
-            className="p-1.5 rounded-full text-amber-400 hover:text-white hover:bg-black/40 transition-colors"
+            className="w-8 h-8 rounded-lg bg-amber-500/20 hover:bg-amber-500/40 border border-amber-500/50 text-amber-200 hover:text-white font-bold flex items-center justify-center transition-colors text-xs cursor-pointer"
             title="Leave Lobby"
           >
-            <LogOut className="w-5 h-5" />
+            ✕
           </button>
         </div>
 
@@ -330,7 +563,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
           <div className="flex items-center gap-3">
             <div className="flex flex-col">
               <span className="text-[10px] uppercase font-bold text-amber-400/80 tracking-widest font-mono">
-                ROOM CODE
+                {isSolo ? 'MODE' : 'ROOM CODE'}
               </span>
               <span className="text-3xl sm:text-4xl font-black font-mono tracking-widest text-transparent bg-clip-text bg-gradient-to-b from-amber-200 via-amber-400 to-amber-600">
                 {displayRoomCode}
@@ -339,20 +572,29 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              onClick={handleCopyCode}
-              className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-[#2b170c] border border-amber-500/60 text-amber-200 hover:text-white hover:border-amber-300 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow"
-            >
-              {copiedCode ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              <span>{copiedCode ? 'Copied Code!' : 'Copy Code'}</span>
-            </button>
-            <button
-              onClick={handleCopyLink}
-              className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-[#2b170c] border border-amber-500/60 text-amber-200 hover:text-white hover:border-amber-300 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow"
-            >
-              {copiedLink ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Sparkles className="w-4 h-4 text-amber-400" />}
-              <span>{copiedLink ? 'Copied Link!' : 'Invite Link'}</span>
-            </button>
+            {!isSolo && (
+              <>
+                <button
+                  onClick={handleCopyCode}
+                  className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-[#2b170c] border border-amber-500/60 text-amber-200 hover:text-white hover:border-amber-300 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow cursor-pointer"
+                >
+                  {copiedCode ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                  <span>{copiedCode ? 'Copied Code!' : 'Copy Code'}</span>
+                </button>
+                <button
+                  onClick={handleCopyLink}
+                  className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-[#2b170c] border border-amber-500/60 text-amber-200 hover:text-white hover:border-amber-300 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow cursor-pointer"
+                >
+                  {copiedLink ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <Sparkles className="w-4 h-4 text-amber-400" />}
+                  <span>{copiedLink ? 'Copied Link!' : 'Invite Link'}</span>
+                </button>
+              </>
+            )}
+            {isSolo && (
+              <div className="px-3.5 py-1.5 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-200 text-xs font-mono font-medium">
+                Offline AI Bots Expedition
+              </div>
+            )}
           </div>
         </div>
 
@@ -418,11 +660,8 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                 {amHost && seats.length < maxPlayers && (
                   <button
                     type="button"
-                    onClick={() => {
-                      soundManager.playClick();
-                      currentSocket?.emit(CLIENT_EVENTS.ADD_AI, { code: roomCode });
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-[11px] font-bold flex items-center gap-1 transition-all shadow-sm"
+                    onClick={handleAddAi}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-[11px] font-bold flex items-center gap-1 transition-all shadow-sm cursor-pointer"
                   >
                     <Sparkles className="w-3 h-3 text-amber-400" />
                     <span>+ Add AI</span>
@@ -437,7 +676,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
             {/* Render Filled Seats */}
             {seats.map((seat, idx) => {
               const isMe = seat.playerId === userProfile.id;
-              const isSeatHost = lobbyState ? seat.playerId === lobbyState.hostId : idx === 0;
+              const isSeatHost = isSolo ? idx === 0 : (lobbyState ? seat.playerId === lobbyState.hostId : idx === 0);
 
               return (
                 <div
@@ -453,7 +692,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                         borderColor: seat.color || '#e11d48',
                       }}
                     >
-                      {seat.playerId === userProfile.id ? userProfile.avatar : '⚓'}
+                      {seat.playerId === userProfile.id ? userProfile.avatar : (seat.isAi ? '🤖' : '⚓')}
                     </div>
 
                     <div className="flex flex-col">
@@ -473,7 +712,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                         )}
                       </div>
                       <span className="text-[10px] text-amber-300/60 font-mono">
-                        Seat #{idx + 1} &bull; {seat.isConnected ? 'Connected' : 'Reconnecting...'}
+                        Seat #{idx + 1} &bull; {seat.isAi ? 'AI Persona' : (seat.isConnected ? 'Connected' : 'Reconnecting...')}
                       </span>
                       {isMe && !seat.ready && (
                         <div className="flex items-center gap-1.5 mt-1">
@@ -486,13 +725,10 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                                 key={color}
                                 type="button"
                                 disabled={isTaken}
-                                onClick={() => {
-                                  soundManager.playClick();
-                                  currentSocket?.emit(CLIENT_EVENTS.SET_COLOR, { code: displayRoomCode, color });
-                                }}
+                                onClick={() => handleSetColor(color)}
                                 style={{ backgroundColor: color }}
                                 title={isTaken ? 'Color taken by another player' : 'Select color'}
-                                className={`w-3.5 h-3.5 rounded-full border transition-all ${
+                                className={`w-3.5 h-3.5 rounded-full border transition-all cursor-pointer ${
                                   isSelected
                                     ? 'ring-2 ring-white scale-125 border-white shadow-sm'
                                     : isTaken
@@ -523,7 +759,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                     {amHost && !isMe && (
                       <button
                         onClick={() => handleKickPlayer(seat.playerId)}
-                        className="p-1.5 rounded-lg text-red-400 hover:text-white hover:bg-red-950/60 transition-colors"
+                        className="p-1.5 rounded-lg text-red-400 hover:text-white hover:bg-red-950/60 transition-colors cursor-pointer"
                         title="Kick Seat"
                       >
                         <UserX className="w-4 h-4" />
@@ -561,31 +797,48 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
           {/* Right Column: In-Lobby Chat & Match Rules */}
           <div className="md:col-span-5 flex flex-col gap-3">
             {/* Match Rules Card */}
-            <div className="p-3.5 rounded-2xl bg-black/40 border border-amber-600/40 space-y-1.5 text-xs">
+            <div className="p-3.5 rounded-2xl bg-black/40 border border-amber-600/40 space-y-2 text-xs">
               <h4 className="text-[11px] font-black uppercase text-amber-300 flex items-center gap-1.5 tracking-wider">
                 <Clock className="w-3.5 h-3.5 text-amber-400" /> Match Settings
               </h4>
               <div className="flex justify-between text-[11px] text-amber-200/80">
                 <span>Scenario:</span>
-                <span className="font-bold text-amber-100">{lobbyState?.settings.scenarioName || 'The First Island'}</span>
-              </div>
-              <div className="flex justify-between text-[11px] text-amber-200/80">
-                <span>Victory Target:</span>
-                <span className="font-bold text-amber-300">{lobbyState?.settings.targetVictoryPoints || 10} VP</span>
-              </div>
-              <div className="flex justify-between text-[11px] text-amber-200/80">
-                <span>Turn Timer:</span>
-                <span className="font-bold text-amber-100">
-                  {lobbyState?.settings.turnDurationSeconds || 60} Seconds
-                </span>
+                <span className="font-bold text-amber-100">{activeScenarioName}</span>
               </div>
 
+              {/* Victory Target with Dynamic Host Options */}
+              <div className="flex flex-col gap-1 pt-1 border-t border-amber-900/30">
+                <div className="flex justify-between text-[11px] text-amber-200/80">
+                  <span>Victory Target:</span>
+                  <span className="font-bold text-amber-300 font-mono">{activeTargetVp} VP</span>
+                </div>
+                {amHost && (
+                  <div className="grid grid-cols-3 gap-1 mt-0.5">
+                    {[10, 12, 14].map((vp) => (
+                      <button
+                        key={vp}
+                        type="button"
+                        onClick={() => handleUpdateTargetVp(vp)}
+                        className={`py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                          activeTargetVp === vp
+                            ? 'bg-amber-600 text-amber-950 border-amber-300 font-black shadow'
+                            : 'bg-black/50 text-amber-200/70 border-amber-900/60 hover:text-white hover:border-amber-600/50'
+                        }`}
+                      >
+                        {vp} VP
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Turn Duration with Dynamic Presets & Custom Input */}
               {amHost && (
                 <div className="pt-2 border-t border-amber-900/40 mt-1">
                   <div className="flex justify-between items-center text-[10px] text-amber-300 font-bold mb-1.5">
-                    <span>Host: Change Turn Duration</span>
+                    <span>Host: Turn Duration</span>
                     <span className="font-mono text-amber-400 font-black">
-                      {lobbyState?.settings.turnDurationSeconds || 60}s
+                      {activeTurnDuration}s
                     </span>
                   </div>
                   <div className="grid grid-cols-5 gap-1">
@@ -595,13 +848,10 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                         type="button"
                         onClick={() => {
                           setShowCustomTurnInput(false);
-                          currentSocket?.emit('client:update_lobby_settings', {
-                            code: displayRoomCode,
-                            settings: { turnDurationSeconds: sec },
-                          });
+                          handleUpdateTurnDuration(sec);
                         }}
-                        className={`py-1 rounded text-[10px] font-bold border transition-all ${
-                          !showCustomTurnInput && (lobbyState?.settings.turnDurationSeconds || 60) === sec
+                        className={`py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                          !showCustomTurnInput && activeTurnDuration === sec
                             ? 'bg-amber-600 text-amber-950 border-amber-300 font-black shadow'
                             : 'bg-black/50 text-amber-200/70 border-amber-900/60 hover:text-white hover:border-amber-600/50'
                         }`}
@@ -612,8 +862,8 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setShowCustomTurnInput(true)}
-                      className={`py-1 rounded text-[10px] font-bold border transition-all ${
-                        showCustomTurnInput || ![30, 60, 90, 120].includes(lobbyState?.settings.turnDurationSeconds || 60)
+                      className={`py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
+                        showCustomTurnInput || ![30, 60, 90, 120].includes(activeTurnDuration)
                           ? 'bg-amber-600 text-amber-950 border-amber-300 font-black shadow'
                           : 'bg-black/50 text-amber-200/70 border-amber-900/60 hover:text-white hover:border-amber-600/50'
                       }`}
@@ -633,13 +883,8 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                       />
                       <button
                         type="button"
-                        onClick={() => {
-                          currentSocket?.emit('client:update_lobby_settings', {
-                            code: displayRoomCode,
-                            settings: { turnDurationSeconds: customTurnVal },
-                          });
-                        }}
-                        className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-black font-black text-[10px] uppercase"
+                        onClick={handleApplyCustomTurn}
+                        className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-black font-black text-[10px] uppercase cursor-pointer"
                       >
                         Apply
                       </button>
@@ -675,7 +920,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
                 />
                 <button
                   type="submit"
-                  className="p-1.5 rounded-lg bg-amber-600/40 hover:bg-amber-500 text-amber-200 hover:text-white transition-colors"
+                  className="p-1.5 rounded-lg bg-amber-600/40 hover:bg-amber-500 text-amber-200 hover:text-white transition-colors cursor-pointer"
                 >
                   <Send className="w-3.5 h-3.5" />
                 </button>
@@ -688,7 +933,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
         <div className="px-6 py-4 bg-black/50 border-t border-amber-500/30 flex flex-col sm:flex-row items-center justify-between gap-3">
           <button
             onClick={handleLeave}
-            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#241710] hover:bg-[#342217] border border-amber-800/60 text-amber-200 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all"
+            className="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-[#241710] hover:bg-[#342217] border border-amber-800/60 text-amber-200 text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span>Leave Room</span>
@@ -699,7 +944,7 @@ export const LobbyRoomModal: React.FC<LobbyRoomModalProps> = ({
             {!amHost && (
               <button
                 onClick={handleToggleReady}
-                className={`w-full sm:w-auto px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${
+                className={`w-full sm:w-auto px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest border transition-all cursor-pointer ${
                   mySeat?.ready
                     ? 'bg-emerald-800 border-emerald-400 text-white shadow-lg'
                     : 'catan-btn-gold'
