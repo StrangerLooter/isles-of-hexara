@@ -125,35 +125,38 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     setTimeout(() => setCopiedRoomCode(false), 2000);
   };
 
-  // Local User Profile
+  // Local User Profile — read from the same persisted localStorage as the main page
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('hexara_user_profile');
       if (saved) {
         try {
-          return JSON.parse(saved);
+          const parsed = JSON.parse(saved);
+          if (parsed.id && parsed.id !== 'guest_ram') return parsed;
         } catch {}
       }
+      const id = localStorage.getItem('hexara_player_id') || `guest_${Date.now()}`;
+      const username = localStorage.getItem('hexara_username') || 'Voyager';
       return {
-        id: localStorage.getItem('hexara_player_id') || 'local_player',
-        username: localStorage.getItem('hexara_username') || 'Ram',
+        id,
+        username,
         avatar: localStorage.getItem('hexara_avatar') || '🧙',
         level: 1,
-        xp: 150,
-        gamesPlayed: 1,
+        xp: 0,
+        gamesPlayed: 0,
         wins: 0,
-        totalVictoryPoints: 8,
+        totalVictoryPoints: 0,
       };
     }
     return {
-      id: 'local_player',
-      username: 'Ram',
+      id: `guest_${Date.now()}`,
+      username: 'Voyager',
       avatar: '🧙',
       level: 1,
-      xp: 150,
-      gamesPlayed: 1,
+      xp: 0,
+      gamesPlayed: 0,
       wins: 0,
-      totalVictoryPoints: 8,
+      totalVictoryPoints: 0,
     };
   });
 
