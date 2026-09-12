@@ -9,6 +9,7 @@ interface RightSidebarWidgetProps {
   logs: string[];
   chatMessages: ChatMessage[];
   onSendMessage?: (text: string) => void;
+  onClose?: () => void;
   className?: string;
 }
 
@@ -16,6 +17,7 @@ export const RightSidebarWidget: React.FC<RightSidebarWidgetProps> = ({
   logs,
   chatMessages,
   onSendMessage,
+  onClose,
   className = '',
 }) => {
   const [activeTab, setActiveTab] = useState<'log' | 'chat'>('log');
@@ -49,17 +51,17 @@ export const RightSidebarWidget: React.FC<RightSidebarWidgetProps> = ({
 
   return (
     <div
-      className={`pointer-events-auto w-72 xl:w-80 h-[480px] xl:h-[520px] rounded-2xl bg-gradient-to-b from-[#24130c]/95 via-[#180b06]/95 to-[#0d0603]/95 border-2 border-amber-600/50 shadow-[0_12px_36px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden backdrop-blur-md ${className}`}
+      className={`pointer-events-auto w-[min(288px,85vw)] xl:w-80 max-h-[calc(100vh-140px)] h-[min(480px,calc(100vh-140px))] rounded-2xl bg-gradient-to-b from-[#24130c]/95 via-[#180b06]/95 to-[#0d0603]/95 border-2 border-amber-600/50 shadow-[0_12px_36px_rgba(0,0,0,0.85)] flex flex-col overflow-hidden backdrop-blur-md ${className}`}
     >
       {/* Header Tabs */}
-      <div className="p-2 border-b border-amber-900/40 bg-black/40 flex gap-2">
+      <div className="p-2 border-b border-amber-900/40 bg-black/40 flex items-center gap-2">
         <button
           type="button"
           onClick={() => {
             soundManager.playClick();
             setActiveTab('log');
           }}
-          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+          className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
             activeTab === 'log'
               ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-amber-950 shadow-md border border-amber-300'
               : 'text-amber-300/60 hover:text-amber-100 hover:bg-black/30'
@@ -74,7 +76,7 @@ export const RightSidebarWidget: React.FC<RightSidebarWidgetProps> = ({
             soundManager.playClick();
             setActiveTab('chat');
           }}
-          className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
+          className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 ${
             activeTab === 'chat'
               ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-amber-950 shadow-md border border-amber-300'
               : 'text-amber-300/60 hover:text-amber-100 hover:bg-black/30'
@@ -86,6 +88,16 @@ export const RightSidebarWidget: React.FC<RightSidebarWidgetProps> = ({
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
           )}
         </button>
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-7 h-7 rounded-lg bg-black/50 hover:bg-black/80 text-amber-300 hover:text-white flex items-center justify-center text-xs font-bold transition-all"
+            title="Close Drawer"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* Feed Area */}

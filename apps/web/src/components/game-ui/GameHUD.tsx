@@ -278,6 +278,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
     (gameState?.phase === 'SETUP_ROUND_2' && placedSettlements === 2 && placedRoads === 1)
   );
 
+  const selectedVertexId = useGameStore((s) => s.selectedVertexId);
+  const selectedEdgeId = useGameStore((s) => s.selectedEdgeId);
+  const hasPlacementSelection =
+    buildMode === 'settlement' || buildMode === 'city'
+      ? Boolean(selectedVertexId)
+      : buildMode === 'road'
+      ? Boolean(selectedEdgeId)
+      : false;
+
   const canAffordRoad = isSetup || Boolean(
     (localPlayer?.resources?.lumber ?? 0) >= 1 &&
     (localPlayer?.resources?.brick ?? 0) >= 1 &&
@@ -807,6 +816,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 logs={gameState.logs || []}
                 chatMessages={activeChatList}
                 onSendMessage={handleSendMessage}
+                onClose={() => setLeftDrawer('none')}
               />
             </div>
           )}
@@ -973,6 +983,16 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                       <span className="text-xs font-black font-serif text-amber-100">Road</span>
                       <span className="text-[10px] text-amber-300/80">Click path from town</span>
                     </div>
+                  </button>
+                )}
+
+                {hasPlacementSelection && (
+                  <button
+                    onClick={() => onConfirmPlacement?.()}
+                    className="w-full flex items-center justify-center gap-2 px-3 py-2 mt-1 rounded-xl bg-gradient-to-r from-emerald-500 via-emerald-600 to-emerald-700 border-2 border-emerald-300 text-white font-black text-xs shadow-[0_0_18px_rgba(16,185,129,0.85)] animate-pulse hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Check className="w-4 h-4 stroke-[3]" />
+                    <span>Confirm & Place</span>
                   </button>
                 )}
               </div>
@@ -1171,10 +1191,19 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 <Ban className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5]" />
               </button>
               <button
-                onClick={() => onConfirmPlacement?.()}
+                onClick={() => {
+                  if (hasPlacementSelection) {
+                    onConfirmPlacement?.();
+                  }
+                }}
+                disabled={!hasPlacementSelection}
                 aria-label="Confirm Placement"
-                className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 border-2 border-emerald-300 text-white shadow-[0_0_25px_rgba(16,185,129,0.9)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all animate-pulse"
-                title="Confirm Placement"
+                className={`w-12 h-12 sm:w-14 sm:h-14 rounded-xl sm:rounded-2xl border-2 flex items-center justify-center transition-all ${
+                  hasPlacementSelection
+                    ? 'bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 border-emerald-300 text-white shadow-[0_0_25px_rgba(16,185,129,0.9)] flex items-center justify-center hover:scale-110 active:scale-95 animate-pulse cursor-pointer'
+                    : 'bg-gradient-to-b from-slate-700 to-slate-800 border-slate-600 text-slate-400 opacity-60 cursor-not-allowed shadow-none pointer-events-none'
+                }`}
+                title={hasPlacementSelection ? 'Confirm Placement (or Right-Click)' : 'Select a location on the board first'}
               >
                 <Check className="w-7 h-7 sm:w-8 sm:h-8 stroke-[3.5]" />
               </button>
@@ -1263,6 +1292,43 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           )}
         </div>
       </footer>
+
+      {/* ============================================================ */}
+      {/* 3.5 FLOATING RIGHT-SIDE CONFIRM BUTTON (Matches UI Reference)*/}
+      {/* ============================================================ */}
+      {buildMode !== 'none' && (
+        <div className="fixed right-3 sm:right-6 top-1/2 -translate-y-1/2 pointer-events-auto z-40 flex flex-col items-center gap-2.5 animate-in fade-in zoom-in-90 duration-200">
+          <button
+            onClick={() => {
+              if (hasPlacementSelection) {
+                soundManager.playBuild();
+                onConfirmPlacement?.();
+              }
+            }}
+            disabled={!hasPlacementSelection}
+            aria-label="Confirm Placement"
+            className={`w-14 h-14 sm:w-18 sm:h-18 rounded-2xl sm:rounded-3xl border-2 sm:border-3 flex items-center justify-center transition-all shadow-2xl ${
+              hasPlacementSelection
+                ? 'bg-gradient-to-b from-emerald-500 via-emerald-600 to-emerald-700 border-emerald-200 text-white shadow-[0_0_35px_rgba(16,185,129,0.95)] hover:scale-110 active:scale-95 animate-pulse cursor-pointer'
+                : 'bg-gradient-to-b from-stone-700/80 to-stone-800/90 border-stone-600 text-stone-400/50 opacity-65 cursor-not-allowed shadow-none pointer-events-none'
+            }`}
+            title={hasPlacementSelection ? 'Confirm Placement (or Right-Click Board)' : 'Click a valid position on the board first'}
+          >
+            <Check className="w-8 h-8 sm:w-10 sm:h-10 stroke-[3.5]" />
+          </button>
+
+          <button
+            onClick={() => {
+              soundManager.playClick();
+              setBuildMode('none');
+            }}
+            className="px-3 py-1 rounded-xl bg-black/70 hover:bg-black/90 border border-red-500/50 text-red-300 text-[11px] font-bold uppercase tracking-wider hover:text-white transition-all shadow cursor-pointer active:scale-95"
+            title="Cancel placement (Esc)"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* ============================================================ */}
       {/* 4. MODALS & DRAWERS SUITE                                    */}

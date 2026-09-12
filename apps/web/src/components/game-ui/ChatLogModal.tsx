@@ -59,22 +59,22 @@ export const ChatLogModal: React.FC<ChatLogModalProps> = ({
   };
 
   return (
-    <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl bg-gradient-to-b from-[#2a1010] via-[#1a0c0c] to-[#120808] border-2 border-[#d97706]/70 rounded-2xl shadow-[0_0_50px_rgba(217,119,6,0.25)] overflow-hidden flex flex-col h-[520px]">
+    <div className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-2 sm:p-4 animate-in fade-in duration-200 overflow-y-auto">
+      <div className="relative w-full max-w-2xl bg-gradient-to-b from-[#2a1010] via-[#1a0c0c] to-[#120808] border-2 border-[#d97706]/70 rounded-2xl shadow-[0_0_50px_rgba(217,119,6,0.25)] overflow-hidden flex flex-col h-[min(520px,86vh)] max-h-[86vh] my-auto">
         {/* Header with Tabs & Back Button */}
-        <div className="flex items-center justify-between px-6 py-3.5 border-b border-[#d97706]/40 bg-[#3a1414]/70">
-          <div className="flex items-center gap-4">
+        <div className="flex items-center justify-between px-3 py-2 sm:px-6 sm:py-3.5 border-b border-[#d97706]/40 bg-[#3a1414]/70">
+          <div className="flex items-center gap-3 sm:gap-4">
             <button
               onClick={onClose}
-              className="px-3 py-1 rounded-lg bg-[#d97706]/20 hover:bg-[#d97706]/40 border border-[#d97706]/50 text-[#fbbf24] font-bold text-xs flex items-center gap-1 uppercase transition-colors"
+              className="px-2.5 py-1 rounded-lg bg-[#d97706]/20 hover:bg-[#d97706]/40 border border-[#d97706]/50 text-[#fbbf24] font-bold text-xs flex items-center gap-1 uppercase transition-colors"
             >
               <span>←</span>
               <span>Back</span>
             </button>
-            <div className="flex items-center gap-5">
+            <div className="flex items-center gap-3 sm:gap-5">
               <button
                 onClick={() => setActiveTab('chat')}
-                className={`text-base font-black tracking-wider uppercase font-serif pb-0.5 transition-all ${
+                className={`text-sm sm:text-base font-black tracking-wider uppercase font-serif pb-0.5 transition-all ${
                   activeTab === 'chat'
                     ? 'text-[#fbbf24] border-b-2 border-[#fbbf24] drop-shadow-md'
                     : 'text-gray-400 hover:text-gray-200'
@@ -84,7 +84,7 @@ export const ChatLogModal: React.FC<ChatLogModalProps> = ({
               </button>
               <button
                 onClick={() => setActiveTab('log')}
-                className={`text-base font-black tracking-wider uppercase font-serif pb-0.5 transition-all ${
+                className={`text-sm sm:text-base font-black tracking-wider uppercase font-serif pb-0.5 transition-all ${
                   activeTab === 'log'
                     ? 'text-[#fbbf24] border-b-2 border-[#fbbf24] drop-shadow-md'
                     : 'text-gray-400 hover:text-gray-200'
@@ -96,22 +96,22 @@ export const ChatLogModal: React.FC<ChatLogModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg bg-[#d97706]/20 hover:bg-[#d97706]/40 border border-[#d97706]/50 text-[#fbbf24] font-bold flex items-center justify-center transition-colors text-xs"
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-[#d97706]/20 hover:bg-[#d97706]/40 border border-[#d97706]/50 text-[#fbbf24] font-bold flex items-center justify-center transition-colors text-xs"
           >
             ✕
           </button>
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 p-5 overflow-y-auto custom-scrollbar flex flex-col justify-between">
+        <div className="flex-1 p-3 sm:p-5 overflow-y-auto custom-scrollbar flex flex-col justify-between min-h-0">
           {activeTab === 'chat' ? (
-            <div className="space-y-3 flex-1 flex flex-col justify-end">
+            <div className="space-y-3 flex-1 flex flex-col justify-end min-h-0">
               {!isMultiplayer && (
-                <div className="p-3 bg-amber-950/40 border border-amber-800/40 rounded-lg text-amber-300 text-sm italic">
+                <div className="p-2.5 bg-amber-950/40 border border-amber-800/40 rounded-lg text-amber-300 text-xs italic">
                   [System]: You are currently playing in Offline Solo Mode with AI opponents.
                 </div>
               )}
-              <div className="space-y-2 overflow-y-auto max-h-[300px] pr-1">
+              <div className="space-y-2 overflow-y-auto max-h-[calc(86vh-170px)] sm:max-h-[300px] pr-1">
                 {chatMessages.length === 0 ? (
                   <p className="text-gray-500 text-sm text-center py-8">
                     No messages yet. Send a greeting to the table!

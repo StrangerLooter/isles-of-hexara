@@ -34,6 +34,7 @@ export interface BabylonCallbacks {
   onVertexClick?: (vertexId: string) => void;
   onEdgeClick?: (edgeId: string) => void;
   onHexClick?: (hexId: string) => void;
+  onConfirmPlacement?: () => void;
 }
 
 export type CameraViewMode = 'perspective' | 'tactical';
@@ -77,10 +78,22 @@ export class BabylonGame {
 
   private currentCameraMode: CameraViewMode = 'perspective';
   private currentPlacementMode: 'none' | 'road' | 'settlement' | 'city' = 'none';
+  private previewTargetY = 0.68;
+  private previewAirY = 1.65;
+  private previewBobObserver: any = null;
+  private isSettlingDown = false;
 
   constructor(canvas: HTMLCanvasElement, callbacks: BabylonCallbacks = {}) {
     this.canvas = canvas;
     this.callbacks = callbacks;
+
+    // Prevent default context menu on canvas and use right-click to confirm airborne placement
+    this.canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (this.previewPieceMesh && !this.isSettlingDown) {
+        this.callbacks.onConfirmPlacement?.();
+      }
+    });
 
     this.engine = new Engine(canvas, true, {
       preserveDrawingBuffer: true,
@@ -1477,6 +1490,11 @@ export class BabylonGame {
    * Clears any active interactive placement preview mesh and highlight spot.
    */
   public clearPlacementPreview(): void {
+    if (this.previewBobObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.previewBobObserver);
+      this.previewBobObserver = null;
+    }
+    this.isSettlingDown = false;
     if (this.previewPieceMesh) {
       this.previewPieceMesh.dispose();
       this.previewPieceMesh = null;
@@ -1488,8 +1506,8 @@ export class BabylonGame {
   }
 
   /**
-   * Spawns a vibrant interactive 3D preview piece and glowing target spot
-   * at the clicked vertex or edge (matching Reference Image 2).
+   * Spawns a vibrant interactive 3D preview piece floating in the air
+   * with a glowing target spot at the clicked vertex or edge.
    */
   public showPlacementPreview(
     type: 'settlement' | 'city' | 'road',
@@ -1503,7 +1521,10 @@ export class BabylonGame {
       const v = board.vertices[id];
       if (!v) return;
 
-      // 1. Bright glowing target disc underneath selected vertex (Image 2)
+      this.previewTargetY = 0.68;
+      this.previewAirY = 1.65; // Floating in the air above the intersection
+
+      // 1. Bright glowing target disc underneath selected vertex
       const spot = MeshBuilder.CreateCylinder(
         'preview_spot',
         { diameter: 1.40, height: 0.06, tessellation: 32 },
@@ -1518,14 +1539,14 @@ export class BabylonGame {
       spot.material = spotMat;
       this.previewSpotMesh = spot;
 
-      // 2. Preview 3D building piece in player's color
+      // 2. Preview 3D building piece in player's color floating in the air
       let piece: Mesh;
       if (type === 'city') {
         piece = this.createCityMesh('preview_piece', 1.0);
-        piece.position = new Vector3(v.x, 0.68, v.z);
+        piece.position = new Vector3(v.x, this.previewAirY, v.z);
       } else {
         piece = this.createSettlementMesh('preview_piece', 0.95);
-        piece.position = new Vector3(v.x, 0.68, v.z);
+        piece.position = new Vector3(v.x, this.previewAirY, v.z);
       }
       piece.isPickable = false;
       piece.getChildMeshes().forEach((m: any) => { m.isPickable = false; });
@@ -1544,6 +1565,9 @@ export class BabylonGame {
       const v2 = board.vertices[v2Id];
       const angleY = v1 && v2 ? Math.atan2(v2.x - v1.x, v2.z - v1.z) : 0;
 
+      this.previewTargetY = 0.74;
+      this.previewAirY = 1.50; // Floating in the air above the edge
+
       // Glowing base bar
       const spot = MeshBuilder.CreateBox(
         'preview_spot_road',
@@ -1560,9 +1584,9 @@ export class BabylonGame {
       spot.material = spotMat;
       this.previewSpotMesh = spot;
 
-      // Preview road stick
+      // Preview road stick floating in the air
       const roadMesh = MeshBuilder.CreateBox('preview_road', { width: 0.34, height: 0.34, depth: 1.7 }, this.scene);
-      roadMesh.position = new Vector3(edge.x, 0.74, edge.z);
+      roadMesh.position = new Vector3(edge.x, this.previewAirY, edge.z);
       roadMesh.rotation.y = angleY;
       roadMesh.isPickable = false;
 
@@ -1573,6 +1597,51 @@ export class BabylonGame {
       roadMesh.material = pMat;
       this.previewPieceMesh = roadMesh;
     }
+
+    // Start gentle floating bobbing animation while airborne
+    let bobAngle = 0;
+    const baseAirY = this.previewAirY;
+    this.previewBobObserver = this.scene.onBeforeRenderObservable.add(() => {
+      if (this.previewPieceMesh && !this.isSettlingDown) {
+        bobAngle += 0.05;
+        this.previewPieceMesh.position.y = baseAirY + Math.sin(bobAngle) * 0.07;
+      }
+    });
+  }
+
+  /**
+   * Smoothly animates the airborne preview piece settling down onto the board surface.
+   */
+  public animatePieceSettleDown(onComplete?: () => void): void {
+    if (!this.previewPieceMesh) {
+      onComplete?.();
+      return;
+    }
+    this.isSettlingDown = true;
+    if (this.previewBobObserver) {
+      this.scene.onBeforeRenderObservable.remove(this.previewBobObserver);
+      this.previewBobObserver = null;
+    }
+
+    const startY = this.previewPieceMesh.position.y;
+    const targetY = this.previewTargetY;
+    const duration = 220; // 220ms smooth landing drop
+    const startTime = performance.now();
+
+    const settleObserver = this.scene.onBeforeRenderObservable.add(() => {
+      const elapsed = performance.now() - startTime;
+      const progress = Math.min(1, elapsed / duration);
+      // Quadratic ease-in for realistic gravity drop
+      const ease = progress * progress;
+      if (this.previewPieceMesh) {
+        this.previewPieceMesh.position.y = startY + (targetY - startY) * ease;
+      }
+      if (progress >= 1) {
+        this.scene.onBeforeRenderObservable.remove(settleObserver);
+        this.isSettlingDown = false;
+        onComplete?.();
+      }
+    });
   }
 
   /**

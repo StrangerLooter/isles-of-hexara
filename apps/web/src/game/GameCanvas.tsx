@@ -8,12 +8,14 @@ interface GameCanvasProps {
   onVertexSelect?: (vertexId: string) => void;
   onEdgeSelect?: (edgeId: string) => void;
   onHexSelect?: (hexId: string) => void;
+  onConfirmPlacement?: () => void;
 }
 
 export const GameCanvas: React.FC<GameCanvasProps> = ({
   onVertexSelect,
   onEdgeSelect,
   onHexSelect,
+  onConfirmPlacement,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const gameInstanceRef = useRef<BabylonGame | null>(null);
@@ -31,6 +33,7 @@ export const GameCanvas: React.FC<GameCanvasProps> = ({
       onVertexClick: (vertexId) => onVertexSelect?.(vertexId),
       onEdgeClick: (edgeId) => onEdgeSelect?.(edgeId),
       onHexClick: (hexId) => onHexSelect?.(hexId),
+      onConfirmPlacement: () => onConfirmPlacement?.(),
     });
     gameInstanceRef.current = game;
     if (typeof window !== 'undefined') {

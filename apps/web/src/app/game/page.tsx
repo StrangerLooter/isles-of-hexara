@@ -669,62 +669,18 @@ export default function GamePage() {
     const vertex = gameState.board.vertices[vertexId];
     if (!vertex) return;
 
-    const isSetup = gameState.phase.startsWith('SETUP');
-    const isMyTurn = gameState.playerOrder[gameState.currentPlayerIndex] === localPlayerId;
-
-    // In SETUP phases: immediately place the piece on valid click
-    if (isSetup && isMyTurn) {
-      const placedSettlements = Object.values(gameState.board.vertices).filter(
-        (v) => v.building?.playerId === localPlayerId
-      ).length;
-      const needsSettlement =
-        (gameState.phase === 'SETUP_ROUND_1' && placedSettlements === 0) ||
-        (gameState.phase === 'SETUP_ROUND_2' && placedSettlements === 1);
-
-      if (needsSettlement || buildMode === 'settlement') {
-        soundManager.playPlacement();
-        dispatchAction({ type: 'BUILD_SETTLEMENT', playerId: localPlayerId, vertexId });
-        setSelectedVertexId(null);
-        setBuildMode('road');
-        return;
-      }
-    }
-
     if (buildMode === 'settlement' || buildMode === 'city') {
+      soundManager.playClick();
       setSelectedVertexId(vertexId);
       setSelectedEdgeId(null);
-      // In regular game phase, the user sees a preview and clicks "Confirm" in the HUD or right palette
     }
   };
 
   const handleEdgeSelect = (edgeId: string) => {
     if (!gameState) return;
-    const isSetup = gameState.phase.startsWith('SETUP');
-    const isMyTurn = gameState.playerOrder[gameState.currentPlayerIndex] === localPlayerId;
-
-    // In SETUP phases: immediately place road on valid click
-    if (isSetup && isMyTurn) {
-      const placedSettlements = Object.values(gameState.board.vertices).filter(
-        (v) => v.building?.playerId === localPlayerId
-      ).length;
-      const placedRoads = Object.values(gameState.board.edges).filter(
-        (e) => e.road?.playerId === localPlayerId
-      ).length;
-      const needsRoad =
-        (gameState.phase === 'SETUP_ROUND_1' && placedSettlements === 1 && placedRoads === 0) ||
-        (gameState.phase === 'SETUP_ROUND_2' && placedSettlements === 2 && placedRoads === 1);
-
-      if (needsRoad || buildMode === 'road') {
-        soundManager.playPlacement();
-        dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId });
-        setSelectedEdgeId(null);
-        setBuildMode('none');
-        // Note: Do NOT dispatch END_TURN! BUILD_ROAD in authoritative game-core automatically advances the setup snake draft!
-        return;
-      }
-    }
 
     if (buildMode === 'road') {
+      soundManager.playClick();
       setSelectedEdgeId(edgeId);
       setSelectedVertexId(null);
     }
@@ -741,13 +697,23 @@ export default function GamePage() {
         setTimeout(() => setErrorToast(null), 3000);
         return;
       }
-      soundManager.playPlacement();
-      dispatchAction({ type: 'BUILD_SETTLEMENT', playerId: localPlayerId, vertexId: selectedVertexId });
-      setSelectedVertexId(null);
-      if (isSetup) {
-        setBuildMode('road');
+      const vId = selectedVertexId;
+      const game = typeof window !== 'undefined' ? (window as any).__hexara_babylon__ : null;
+      const settleDownAndPlace = () => {
+        soundManager.playPlacement();
+        dispatchAction({ type: 'BUILD_SETTLEMENT', playerId: localPlayerId, vertexId: vId });
+        setSelectedVertexId(null);
+        if (isSetup) {
+          setBuildMode('road');
+        } else {
+          setBuildMode('none');
+        }
+      };
+
+      if (game?.animatePieceSettleDown) {
+        game.animatePieceSettleDown(settleDownAndPlace);
       } else {
-        setBuildMode('none');
+        settleDownAndPlace();
       }
     } else if (buildMode === 'city') {
       if (!selectedVertexId) {
@@ -756,10 +722,20 @@ export default function GamePage() {
         setTimeout(() => setErrorToast(null), 3000);
         return;
       }
-      soundManager.playPlacement();
-      dispatchAction({ type: 'BUILD_CITY', playerId: localPlayerId, vertexId: selectedVertexId });
-      setSelectedVertexId(null);
-      setBuildMode('none');
+      const vId = selectedVertexId;
+      const game = typeof window !== 'undefined' ? (window as any).__hexara_babylon__ : null;
+      const settleDownAndPlace = () => {
+        soundManager.playPlacement();
+        dispatchAction({ type: 'BUILD_CITY', playerId: localPlayerId, vertexId: vId });
+        setSelectedVertexId(null);
+        setBuildMode('none');
+      };
+
+      if (game?.animatePieceSettleDown) {
+        game.animatePieceSettleDown(settleDownAndPlace);
+      } else {
+        settleDownAndPlace();
+      }
     } else if (buildMode === 'road') {
       if (!selectedEdgeId) {
         soundManager.playError();
@@ -767,11 +743,20 @@ export default function GamePage() {
         setTimeout(() => setErrorToast(null), 3000);
         return;
       }
-      soundManager.playPlacement();
-      dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId: selectedEdgeId });
-      setSelectedEdgeId(null);
-      setBuildMode('none');
-      // Note: Do NOT dispatch duplicate END_TURN during setup!
+      const eId = selectedEdgeId;
+      const game = typeof window !== 'undefined' ? (window as any).__hexara_babylon__ : null;
+      const settleDownAndPlace = () => {
+        soundManager.playPlacement();
+        dispatchAction({ type: 'BUILD_ROAD', playerId: localPlayerId, edgeId: eId });
+        setSelectedEdgeId(null);
+        setBuildMode('none');
+      };
+
+      if (game?.animatePieceSettleDown) {
+        game.animatePieceSettleDown(settleDownAndPlace);
+      } else {
+        settleDownAndPlace();
+      }
     }
   };
 
@@ -988,6 +973,7 @@ export default function GamePage() {
         onVertexSelect={handleVertexSelect}
         onEdgeSelect={handleEdgeSelect}
         onHexSelect={handleHexSelect}
+        onConfirmPlacement={handleConfirmPlacement}
       />
       <GameHUD
         socket={socketRef.current}
